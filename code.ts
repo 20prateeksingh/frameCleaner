@@ -1,8 +1,8 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Complete TypeScript with Selective Sibling Optimization
+// Frame Cleaner Plugin - Complete TypeScript with Enhanced Selective Sibling Optimization
 // Optimizes auto-layout structures by merging unnecessary nested frames and selectively dissolving compatible siblings
-// Features: Layout sizing inheritance, selective sibling dissolution, cross-direction padding validation
+// Features: Layout sizing inheritance, selective sibling dissolution with full→partial hierarchy, cross-direction padding validation
 
 // Type definitions
 interface CleaningResults {
@@ -482,7 +482,7 @@ function dimensionsMatch(parent: FrameNode | GroupNode, child: FrameNode | Group
   }
 }
 
-// ===== SELECTIVE SIBLING OPTIMIZATION FUNCTIONS =====
+// ===== ENHANCED SELECTIVE SIBLING OPTIMIZATION FUNCTIONS =====
 
 function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): CrossDirectionPadding {
   if (!hasAutoLayout(frame)) {
@@ -510,8 +510,17 @@ function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): C
   return { top: 0, bottom: 0, left: 0, right: 0 };
 }
 
-function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode): boolean {
-  console.log(`\n🔍 SELECTIVE COMPATIBILITY CHECK: "${safeGetNodeName(sibling)}" in "${safeGetNodeName(parent)}"`);
+function siblingHasZeroPadding(sibling: FrameNode): boolean {
+  if (!hasAutoLayout(sibling)) return true;
+  
+  return sibling.paddingTop === 0 && 
+         sibling.paddingBottom === 0 && 
+         sibling.paddingLeft === 0 && 
+         sibling.paddingRight === 0;
+}
+
+function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode, requireZeroPadding: boolean = false): boolean {
+  console.log(`\n🔍 SELECTIVE COMPATIBILITY CHECK: "${safeGetNodeName(sibling)}" in "${safeGetNodeName(parent)}"${requireZeroPadding ? ' (padding:0 required)' : ''}`);
   
   // Must be frame with auto-layout
   if (!hasAutoLayout(sibling)) {
@@ -523,6 +532,12 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode)
   const layoutChildren = getLayoutChildren(sibling);
   if (layoutChildren.length === 0) {
     console.log('❌ Empty sibling');
+    return false;
+  }
+  
+  // Check padding requirement for partial dissolution
+  if (requireZeroPadding && !siblingHasZeroPadding(sibling)) {
+    console.log('❌ Sibling has padding (required to be 0 for partial dissolution)');
     return false;
   }
   
@@ -592,9 +607,9 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode)
     }
   }
   
-  // ENHANCED: Check for blend modes
-  if ('blendMode' in sibling && sibling.blendMode !== 'NORMAL') {
-    console.log(`❌ Sibling has non-normal blend mode: ${sibling.blendMode}`);
+  // FIXED: Check for blend modes (allow PASS_THROUGH as it's the default for frames)
+  if ('blendMode' in sibling && sibling.blendMode !== 'NORMAL' && sibling.blendMode !== 'PASS_THROUGH') {
+    console.log(`❌ Sibling has non-standard blend mode: ${sibling.blendMode}`);
     return false;
   }
   
@@ -664,6 +679,112 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode)
   
   console.log('✅ Sibling is compatible for selective dissolution');
   return true;
+}
+
+function canAllSiblingsBeDissolvedTogether(parentFrame: FrameNode): boolean {
+  if (!nodeExists(parentFrame) || !hasAutoLayout(parentFrame)) return false;
+  
+  const layoutChildren = getLayoutChildren(parentFrame);
+  const siblingFrames = layoutChildren.filter(child => isFrameNode(child)) as FrameNode[];
+  
+  if (siblingFrames.length === 0) return false;
+  
+  console.log(`\n🔍 FULL DISSOLUTION CHECK: Checking if ALL ${siblingFrames.length} siblings can be dissolved together in "${safeGetNodeName(parentFrame)}"`);
+  
+  // Every sibling must be compatible (no padding requirement for full dissolution)
+  for (const sibling of siblingFrames) {
+    if (!nodeExists(sibling)) {
+      console.log(`❌ Sibling no longer exists`);
+      return false;
+    }
+    
+    if (!canSiblingBeDissolvedSelectively(sibling, parentFrame, false)) {
+      console.log(`❌ Full dissolution blocked by incompatible sibling: "${safeGetNodeName(sibling)}"`);
+      return false;
+    }
+  }
+  
+  console.log(`✅ ALL siblings are compatible for full dissolution`);
+  return true;
+}
+
+function dissolveAllSiblings(parentFrame: FrameNode): void {
+  console.log(`\n🚀 FULL SIBLING DISSOLUTION: Dissolving ALL siblings in "${safeGetNodeName(parentFrame)}"`);
+  
+  if (!nodeExists(parentFrame) || !hasAutoLayout(parentFrame)) return;
+  
+  const layoutChildren = getLayoutChildren(parentFrame);
+  const siblingFrames = layoutChildren.filter(child => isFrameNode(child)) as FrameNode[];
+  
+  if (siblingFrames.length === 0) return;
+  
+  let totalChildrenPromoted = 0;
+  let paddingTransferred = false;
+  
+  // Process siblings in reverse order to avoid index shifting
+  for (let i = siblingFrames.length - 1; i >= 0; i--) {
+    const sibling = siblingFrames[i];
+    
+    if (!nodeExists(sibling)) continue;
+    
+    console.log(`📦 Dissolving sibling ${i + 1}/${siblingFrames.length}: "${safeGetNodeName(sibling)}"`);
+    
+    try {
+      // Get sibling's position among current parent children (this changes as we remove siblings)
+      const currentParentChildren = getLayoutChildren(parentFrame);
+      const siblingIndex = currentParentChildren.findIndex(child => child === sibling);
+      
+      if (siblingIndex === -1) {
+        console.log(`❌ Could not find sibling position`);
+        continue;
+      }
+      
+      // Transfer cross-direction padding only from the first sibling
+      if (!paddingTransferred && hasAutoLayout(sibling)) {
+        const parentLayoutMode = parentFrame.layoutMode;
+        const siblingPadding = getCrossDirectionPadding(sibling, parentLayoutMode);
+        
+        if (siblingPadding.top > 0 || siblingPadding.bottom > 0 || siblingPadding.left > 0 || siblingPadding.right > 0) {
+          console.log(`🔧 Transferring cross-direction padding from first sibling to parent`);
+          console.log(`  Padding: top:${siblingPadding.top}, bottom:${siblingPadding.bottom}, left:${siblingPadding.left}, right:${siblingPadding.right}`);
+          
+          parentFrame.paddingLeft += siblingPadding.left;
+          parentFrame.paddingRight += siblingPadding.right;
+          parentFrame.paddingTop += siblingPadding.top;
+          parentFrame.paddingBottom += siblingPadding.bottom;
+          
+          paddingTransferred = true;
+        }
+      }
+      
+      // Collect and move sibling's children
+      if (hasChildren(sibling)) {
+        const childrenToMove = [...sibling.children].filter(child => nodeExists(child));
+        console.log(`  📦 Moving ${childrenToMove.length} children from sibling to parent`);
+        
+        // Insert children in reverse order to maintain positioning
+        for (let j = childrenToMove.length - 1; j >= 0; j--) {
+          const child = childrenToMove[j];
+          if (nodeExists(child) && nodeExists(parentFrame)) {
+            parentFrame.insertChild(siblingIndex, child);
+            totalChildrenPromoted++;
+          }
+        }
+      }
+      
+      // Remove the empty sibling
+      if (nodeExists(sibling)) {
+        sibling.remove();
+        cleaningResults.siblingsRemoved++;
+      }
+      
+    } catch (error) {
+      console.warn(`Error dissolving sibling "${safeGetNodeName(sibling)}":`, error);
+    }
+  }
+  
+  console.log(`✅ Full dissolution complete: ${siblingFrames.length} siblings dissolved, ${totalChildrenPromoted} children promoted`);
+  cleaningResults.siblingGroupsOptimized++;
 }
 
 function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTransferPadding: boolean = true): void {
@@ -753,20 +874,31 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
   
   if (siblingFrames.length === 0) return;
   
-  console.log(`\n🔄 SELECTIVE SIBLING OPTIMIZATION: Checking ${siblingFrames.length} frame siblings in "${safeGetNodeName(parentFrame)}"`);
+  console.log(`\n🔄 ENHANCED SIBLING OPTIMIZATION: Checking ${siblingFrames.length} frame siblings in "${safeGetNodeName(parentFrame)}"`);
   
+  // STRATEGY 1: Try full dissolution first
+  if (canAllSiblingsBeDissolvedTogether(parentFrame)) {
+    console.log(`🎯 FULL DISSOLUTION: All siblings compatible - dissolving together`);
+    dissolveAllSiblings(parentFrame);
+    return;
+  }
+  
+  console.log(`ℹ️ Full dissolution not possible - checking partial dissolution (padding:0 only)`);
+  
+  // STRATEGY 2: Partial dissolution with padding:0 requirement
   let dissolvedCount = 0;
   let paddingTransferred = false;
   
-  // Check each sibling individually for dissolution potential
+  // Check each sibling individually for dissolution potential (padding:0 required)
   // Process in reverse order to avoid index shifting issues
   for (let i = siblingFrames.length - 1; i >= 0; i--) {
     const sibling = siblingFrames[i];
     
     if (!nodeExists(sibling)) continue;
     
-    if (canSiblingBeDissolvedSelectively(sibling, parentFrame)) {
-      console.log(`🎯 Sibling "${safeGetNodeName(sibling)}" is compatible - dissolving selectively`);
+    // Require zero padding for partial dissolution
+    if (canSiblingBeDissolvedSelectively(sibling, parentFrame, true)) {
+      console.log(`🎯 Sibling "${safeGetNodeName(sibling)}" is compatible for partial dissolution (padding:0)`);
       
       try {
         dissolveSingleSibling(sibling, parentFrame, !paddingTransferred);
@@ -776,19 +908,19 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
         console.warn(`Error dissolving sibling "${safeGetNodeName(sibling)}":`, error);
       }
     } else {
-      console.log(`ℹ️ Sibling "${safeGetNodeName(sibling)}" not compatible - keeping as-is`);
+      console.log(`ℹ️ Sibling "${safeGetNodeName(sibling)}" not compatible for partial dissolution - keeping as-is`);
     }
   }
   
   if (dissolvedCount > 0) {
-    console.log(`✅ Selective optimization complete: ${dissolvedCount} siblings dissolved in "${safeGetNodeName(parentFrame)}"`);
+    console.log(`✅ Partial optimization complete: ${dissolvedCount} siblings dissolved in "${safeGetNodeName(parentFrame)}"`);
     cleaningResults.siblingGroupsOptimized++;
   } else {
     console.log(`ℹ️ No siblings were compatible for dissolution in "${safeGetNodeName(parentFrame)}"`);
   }
 }
 
-// ===== END SELECTIVE SIBLING OPTIMIZATION =====
+// ===== END ENHANCED SELECTIVE SIBLING OPTIMIZATION =====
 
 // Analysis functions
 function analyzeSelection(): void {
@@ -857,20 +989,26 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
         results.mergeableFrames++;
       }
       
-      // Check for optimizable siblings (selective approach)
+      // Check for optimizable siblings (enhanced approach: full vs partial)
       if (isFrameNode(node) && hasAutoLayout(node)) {
         const layoutChildren = getLayoutChildren(node);
         const siblingFrames = layoutChildren.filter(child => isFrameNode(child)) as FrameNode[];
         
-        let optimizableCount = 0;
-        siblingFrames.forEach(sibling => {
-          if (canSiblingBeDissolvedSelectively(sibling, node)) {
-            optimizableCount++;
-          }
-        });
-        
-        if (optimizableCount > 0) {
+        // Check for full dissolution potential
+        if (canAllSiblingsBeDissolvedTogether(node)) {
           results.optimizableSiblingGroups++;
+        } else {
+          // Check for partial dissolution potential (padding:0 only)
+          let hasPartialOptimization = false;
+          siblingFrames.forEach(sibling => {
+            if (canSiblingBeDissolvedSelectively(sibling, node, true)) {
+              hasPartialOptimization = true;
+            }
+          });
+          
+          if (hasPartialOptimization) {
+            results.optimizableSiblingGroups++;
+          }
         }
       }
       
