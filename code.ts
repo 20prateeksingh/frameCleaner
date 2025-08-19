@@ -482,21 +482,7 @@ function dimensionsMatch(parent: FrameNode | GroupNode, child: FrameNode | Group
   }
 }
 
-// ===== ENHANCED PADDING UTILITIES =====
-
-function getSameAxisPadding(frame: FrameNode, parentLayoutMode: string): number {
-  if (!hasAutoLayout(frame)) return 0;
-  
-  if (parentLayoutMode === 'HORIZONTAL') {
-    // Same axis is horizontal, so left/right padding
-    return frame.paddingLeft + frame.paddingRight;
-  } else if (parentLayoutMode === 'VERTICAL') {
-    // Same axis is vertical, so top/bottom padding
-    return frame.paddingTop + frame.paddingBottom;
-  }
-  
-  return 0;
-}
+// ===== SELECTIVE SIBLING OPTIMIZATION FUNCTIONS =====
 
 function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): CrossDirectionPadding {
   if (!hasAutoLayout(frame)) {
@@ -524,13 +510,6 @@ function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): C
   return { top: 0, bottom: 0, left: 0, right: 0 };
 }
 
-function getCrossDirectionPaddingTotal(frame: FrameNode, parentLayoutMode: string): number {
-  const crossPadding = getCrossDirectionPadding(frame, parentLayoutMode);
-  return crossPadding.top + crossPadding.bottom + crossPadding.left + crossPadding.right;
-}
-
-// ===== SELECTIVE SIBLING OPTIMIZATION FUNCTIONS =====
-
 function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode): boolean {
   console.log(`\n🔍 SELECTIVE COMPATIBILITY CHECK: "${safeGetNodeName(sibling)}" in "${safeGetNodeName(parent)}"`);
   
@@ -547,15 +526,8 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode)
     return false;
   }
   
-  // ALWAYS require same-axis padding = 0 (non-negotiable for V1)
-  const parentLayoutMode = parent.layoutMode;
-  const sameAxisPadding = getSameAxisPadding(sibling, parentLayoutMode);
-  if (sameAxisPadding > 0) {
-    console.log(`❌ Sibling has same-axis padding: ${sameAxisPadding}px (must be 0)`);
-    return false;
-  }
-  
   // Layout mode must match parent (with single-child exception)
+  const parentLayoutMode = parent.layoutMode;
   const siblingException = layoutChildren.length === 1;
   
   if (!siblingException && sibling.layoutMode !== parentLayoutMode) {
@@ -563,7 +535,7 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode)
     return false;
   }
   
-  // Check gap compatibility - SKIP SPACE_BETWEEN FOR V1 SAFETY
+  // Check gap compatibility - THIS IS THE KEY MATHEMATICAL CONSTRAINT!
   const siblingSpacing = getChildSpacingInfo(sibling);
   const parentSpacing = getChildSpacingInfo(parent);
   
@@ -571,13 +543,13 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode)
   console.log(`  Parent gap: ${parentSpacing.impliedGapPixels}px (hasAutoGap: ${parentSpacing.hasAutoGap})`);
   console.log(`  Sibling gap: ${siblingSpacing.impliedGapPixels}px (hasAutoGap: ${siblingSpacing.hasAutoGap})`);
   
-  // V1 SAFETY: Skip any SPACE_BETWEEN scenarios
-  if (siblingSpacing.hasAutoGap || parentSpacing.hasAutoGap) {
-    console.log(`❌ SPACE_BETWEEN detected - skipping for V1 safety`);
+  // For auto-gap, both must use auto-gap AND have identical gap values
+  if (siblingSpacing.hasAutoGap !== parentSpacing.hasAutoGap) {
+    console.log(`❌ Gap type mismatch: Parent auto-gap ${parentSpacing.hasAutoGap} vs Sibling auto-gap ${siblingSpacing.hasAutoGap}`);
     return false;
   }
   
-  // Gap values must be identical for fixed spacing
+  // Gap values must be identical
   if (Math.abs(siblingSpacing.impliedGapPixels - parentSpacing.impliedGapPixels) > 0.01) {
     console.log(`❌ Gap values don't match: ${siblingSpacing.impliedGapPixels}px vs ${parentSpacing.impliedGapPixels}px`);
     return false;
@@ -694,95 +666,8 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode)
   return true;
 }
 
-// Check if ALL auto-layout siblings can be dissolved (enables safe cross-axis padding transfer)
-function canDissolveAllSiblings(parent: FrameNode): boolean {
-  const autoLayoutSiblings = getLayoutChildren(parent).filter(child => 
-    isFrameNode(child) && hasAutoLayout(child)
-  ) as FrameNode[];
-  
-  if (autoLayoutSiblings.length === 0) return false;
-  
-  // Check if ALL auto-layout siblings can be dissolved
-  const eligibleCount = autoLayoutSiblings.filter(sibling =>
-    canSiblingBeDissolvedSelectively(sibling, parent)
-  ).length;
-  
-  const isFullDissolution = eligibleCount === autoLayoutSiblings.length;
-  
-  console.log(`🔍 FULL DISSOLUTION CHECK:`);
-  console.log(`  Auto-layout siblings: ${autoLayoutSiblings.length}`);
-  console.log(`  Eligible for dissolution: ${eligibleCount}`);
-  console.log(`  Can dissolve all: ${isFullDissolution}`);
-  
-  return isFullDissolution;
-}
-
-// Get siblings eligible for partial dissolution (cross-axis padding = 0 required)
-function getPartialDissolutionSiblings(parent: FrameNode): FrameNode[] {
-  const autoLayoutSiblings = getLayoutChildren(parent).filter(child => 
-    isFrameNode(child) && hasAutoLayout(child)
-  ) as FrameNode[];
-  
-  return autoLayoutSiblings.filter(sibling => {
-    // Must pass basic eligibility first
-    if (!canSiblingBeDissolvedSelectively(sibling, parent)) return false;
-    
-    // For partial dissolution: also require cross-axis padding = 0
-    const crossAxisPaddingTotal = getCrossDirectionPaddingTotal(sibling, parent.layoutMode);
-    const eligible = crossAxisPaddingTotal === 0;
-    
-    if (!eligible) {
-      console.log(`❌ Sibling "${safeGetNodeName(sibling)}" has cross-axis padding: ${crossAxisPaddingTotal}px (partial dissolution requires 0)`);
-    }
-    
-    return eligible;
-  });
-}
-
-// Safe cross-axis padding transfer (only during full dissolution)
-function transferCrossAxisPadding(parent: FrameNode, siblings: FrameNode[]): void {
-  if (siblings.length === 0) return;
-  
-  // Use first sibling's cross-axis padding as reference
-  const referenceSibling = siblings[0];
-  const referencePadding = getCrossDirectionPadding(referenceSibling, parent.layoutMode);
-  
-  // Verify all siblings have the same cross-axis padding
-  const hasConsistentPadding = siblings.every(sibling => {
-    const siblingPadding = getCrossDirectionPadding(sibling, parent.layoutMode);
-    return siblingPadding.top === referencePadding.top &&
-           siblingPadding.bottom === referencePadding.bottom &&
-           siblingPadding.left === referencePadding.left &&
-           siblingPadding.right === referencePadding.right;
-  });
-  
-  if (!hasConsistentPadding) {
-    console.log(`⚠️ Inconsistent cross-axis padding across siblings - skipping transfer`);
-    return;
-  }
-  
-  // Only transfer if there's actual padding to transfer
-  const totalPadding = referencePadding.top + referencePadding.bottom + referencePadding.left + referencePadding.right;
-  if (totalPadding === 0) {
-    console.log(`ℹ️ No cross-axis padding to transfer`);
-    return;
-  }
-  
-  console.log(`🔄 TRANSFERRING CROSS-AXIS PADDING:`);
-  console.log(`  From siblings to parent: "${safeGetNodeName(parent)}"`);
-  console.log(`  Padding: top:${referencePadding.top}, right:${referencePadding.right}, bottom:${referencePadding.bottom}, left:${referencePadding.left}`);
-  
-  // Transfer to parent
-  parent.paddingTop += referencePadding.top;
-  parent.paddingRight += referencePadding.right;
-  parent.paddingBottom += referencePadding.bottom;
-  parent.paddingLeft += referencePadding.left;
-  
-  console.log(`✅ Parent padding updated to: (${parent.paddingLeft}, ${parent.paddingTop}, ${parent.paddingRight}, ${parent.paddingBottom})`);
-}
-
-function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTransferPadding: boolean = false): void {
-  console.log(`\n🚀 DISSOLVING SINGLE SIBLING: "${safeGetNodeName(sibling)}" → promoting children to "${safeGetNodeName(parent)}" (padding transfer: ${shouldTransferPadding})`);
+function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTransferPadding: boolean = true): void {
+  console.log(`\n🚀 DISSOLVING SINGLE SIBLING: "${safeGetNodeName(sibling)}" → promoting children to "${safeGetNodeName(parent)}"`);
   
   if (!nodeExists(sibling) || !nodeExists(parent)) {
     console.log('❌ Sibling or parent no longer exists');
@@ -800,13 +685,13 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
   
   console.log(`📍 Sibling position: ${siblingIndex} of ${parentChildren.length}`);
   
-  // Transfer cross-direction padding only if requested (for full dissolution)
+  // Transfer cross-direction padding only if this is the first dissolution in the group
   if (shouldTransferPadding && hasAutoLayout(sibling)) {
-    const siblingPadding = getCrossDirectionPadding(sibling, parent.layoutMode);
-    const totalPadding = siblingPadding.top + siblingPadding.bottom + siblingPadding.left + siblingPadding.right;
+    const parentLayoutMode = parent.layoutMode;
+    const siblingPadding = getCrossDirectionPadding(sibling, parentLayoutMode);
     
-    if (totalPadding > 0) {
-      console.log(`🔧 Transferring sibling cross-direction padding to parent`);
+    if (siblingPadding.top > 0 || siblingPadding.bottom > 0 || siblingPadding.left > 0 || siblingPadding.right > 0) {
+      console.log(`🔧 Transferring sibling cross-direction padding to parent (first dissolution only)`);
       console.log(`  Sibling padding: top:${siblingPadding.top}, bottom:${siblingPadding.bottom}, left:${siblingPadding.left}, right:${siblingPadding.right}`);
       
       parent.paddingLeft += siblingPadding.left;
@@ -816,6 +701,8 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
       
       console.log(`  New parent padding: ${parent.paddingTop}, ${parent.paddingRight}, ${parent.paddingBottom}, ${parent.paddingLeft}`);
     }
+  } else if (!shouldTransferPadding) {
+    console.log(`ℹ️ Skipping padding transfer (already transferred for this group)`);
   }
   
   // Collect sibling's children and explicitly move them BEFORE removing sibling
@@ -858,63 +745,6 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
   console.log(`✅ Selective sibling dissolution complete: ${siblingChildren.length} children promoted`);
 }
 
-// Full dissolution with safe padding transfer
-function dissolveAllSiblings(parent: FrameNode): boolean {
-  const autoLayoutSiblings = getLayoutChildren(parent).filter(child => 
-    isFrameNode(child) && hasAutoLayout(child)
-  ) as FrameNode[];
-  
-  const eligibleSiblings = autoLayoutSiblings.filter(sibling =>
-    canSiblingBeDissolvedSelectively(sibling, parent)
-  );
-  
-  if (eligibleSiblings.length === 0 || eligibleSiblings.length !== autoLayoutSiblings.length) {
-    return false;
-  }
-  
-  console.log(`🚀 FULL DISSOLUTION: ${eligibleSiblings.length} siblings`);
-  
-  // Transfer cross-axis padding ONCE before dissolving any siblings
-  transferCrossAxisPadding(parent, eligibleSiblings);
-  
-  // Dissolve all siblings (no individual padding transfer needed)
-  let dissolved = 0;
-  eligibleSiblings.forEach(sibling => {
-    try {
-      dissolveSingleSibling(sibling, parent, false); // false = no individual padding transfer
-      dissolved++;
-    } catch (error) {
-      console.warn(`Error dissolving sibling "${safeGetNodeName(sibling)}":`, error);
-    }
-  });
-  
-  console.log(`✅ Full dissolution complete: ${dissolved}/${eligibleSiblings.length} siblings dissolved`);
-  return dissolved > 0;
-}
-
-// Partial dissolution (no padding transfer)
-function dissolvePartialSiblings(parent: FrameNode): boolean {
-  const eligibleSiblings = getPartialDissolutionSiblings(parent);
-  
-  if (eligibleSiblings.length === 0) return false;
-  
-  console.log(`🎯 PARTIAL DISSOLUTION: ${eligibleSiblings.length} zero-padding siblings`);
-  
-  let dissolved = 0;
-  eligibleSiblings.forEach(sibling => {
-    try {
-      dissolveSingleSibling(sibling, parent, false); // false = no padding transfer
-      dissolved++;
-    } catch (error) {
-      console.warn(`Error dissolving sibling "${safeGetNodeName(sibling)}":`, error);
-    }
-  });
-  
-  console.log(`✅ Partial dissolution complete: ${dissolved}/${eligibleSiblings.length} siblings dissolved`);
-  return dissolved > 0;
-}
-
-// Updated main selective optimization function with two-phase approach
 function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
   if (!nodeExists(parentFrame) || !hasAutoLayout(parentFrame)) return;
   
@@ -925,26 +755,34 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
   
   console.log(`\n🔄 SELECTIVE SIBLING OPTIMIZATION: Checking ${siblingFrames.length} frame siblings in "${safeGetNodeName(parentFrame)}"`);
   
-  let optimizationApplied = false;
+  let dissolvedCount = 0;
+  let paddingTransferred = false;
   
-  // Phase 1: Try full dissolution (safest for padding transfer)
-  if (canDissolveAllSiblings(parentFrame)) {
-    console.log(`✅ Full dissolution possible - proceeding with padding transfer`);
-    if (dissolveAllSiblings(parentFrame)) {
-      optimizationApplied = true;
-      cleaningResults.siblingGroupsOptimized++;
-    }
-  } else {
-    // Phase 2: Partial dissolution (zero-padding siblings only)
-    console.log(`⚠️ Full dissolution not possible - checking partial dissolution`);
-    if (dissolvePartialSiblings(parentFrame)) {
-      optimizationApplied = true;
-      cleaningResults.siblingGroupsOptimized++;
+  // Check each sibling individually for dissolution potential
+  // Process in reverse order to avoid index shifting issues
+  for (let i = siblingFrames.length - 1; i >= 0; i--) {
+    const sibling = siblingFrames[i];
+    
+    if (!nodeExists(sibling)) continue;
+    
+    if (canSiblingBeDissolvedSelectively(sibling, parentFrame)) {
+      console.log(`🎯 Sibling "${safeGetNodeName(sibling)}" is compatible - dissolving selectively`);
+      
+      try {
+        dissolveSingleSibling(sibling, parentFrame, !paddingTransferred);
+        dissolvedCount++;
+        paddingTransferred = true; // Only transfer padding once per optimization round
+      } catch (error) {
+        console.warn(`Error dissolving sibling "${safeGetNodeName(sibling)}":`, error);
+      }
+    } else {
+      console.log(`ℹ️ Sibling "${safeGetNodeName(sibling)}" not compatible - keeping as-is`);
     }
   }
   
-  if (optimizationApplied) {
-    console.log(`✅ Selective optimization complete in "${safeGetNodeName(parentFrame)}"`);
+  if (dissolvedCount > 0) {
+    console.log(`✅ Selective optimization complete: ${dissolvedCount} siblings dissolved in "${safeGetNodeName(parentFrame)}"`);
+    cleaningResults.siblingGroupsOptimized++;
   } else {
     console.log(`ℹ️ No siblings were compatible for dissolution in "${safeGetNodeName(parentFrame)}"`);
   }
@@ -1019,12 +857,19 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
         results.mergeableFrames++;
       }
       
-      // Check for optimizable siblings (using new two-phase approach)
+      // Check for optimizable siblings (selective approach)
       if (isFrameNode(node) && hasAutoLayout(node)) {
-        const fullDissolutionPossible = canDissolveAllSiblings(node);
-        const partialDissolutionSiblings = getPartialDissolutionSiblings(node);
+        const layoutChildren = getLayoutChildren(node);
+        const siblingFrames = layoutChildren.filter(child => isFrameNode(child)) as FrameNode[];
         
-        if (fullDissolutionPossible || partialDissolutionSiblings.length > 0) {
+        let optimizableCount = 0;
+        siblingFrames.forEach(sibling => {
+          if (canSiblingBeDissolvedSelectively(sibling, node)) {
+            optimizableCount++;
+          }
+        });
+        
+        if (optimizableCount > 0) {
           results.optimizableSiblingGroups++;
         }
       }
