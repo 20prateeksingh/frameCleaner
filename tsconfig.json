@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "lib": ["ES2019"],
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "exactOptionalPropertyTypes": false,
+    "outDir": "./",
+    "rootDir": "./",
+    "declaration": false,
+    "sourceMap": false,
+    "removeComments": true
+  },
+  "include": [
+    "code.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "ui.html"
+  ],
+  "typeRoots": [
+    "./node_modules/@types",
+    "./node_modules/@figma"
+  ]
+}

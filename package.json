@@ -1,0 +1,27 @@
+{
+  "name": "frame-cleaner-plugin",
+  "version": "1.0.0",
+  "description": "Figma plugin that optimizes auto-layout structures by merging unnecessary nested frames",
+  "main": "code.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "figma",
+    "plugin",
+    "auto-layout",
+    "frame",
+    "optimization"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.90.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
