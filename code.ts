@@ -583,6 +583,108 @@ function siblingHasZeroPadding(sibling: FrameNode): boolean {
          sibling.paddingRight === 0;
 }
 
+// Visual safety helper - checks if dissolving this frame would lose visual properties
+function hasUnsafeVisualProperties(node: FrameNode): boolean {
+  // Check for strokes
+  if (hasStroke(node)) {
+    console.log('❌ Sibling has strokes');
+    return true;
+  }
+  
+  // Check for effects
+  if (hasEffects(node)) {
+    console.log('❌ Sibling has effects');
+    return true;
+  }
+  
+  // Check for corner radius
+  if (hasCornerRadius(node)) {
+    console.log('❌ Sibling has corner radius');
+    return true;
+  }
+  
+  // Check opacity
+  if (node.opacity !== 1) {
+    console.log('❌ Sibling has opacity ≠ 1');
+    return true;
+  }
+  
+  // Check for visible fills that would be lost
+  if ('fills' in node && isArrayValue(node.fills) && node.fills.length > 0) {
+    const hasVisibleFills = node.fills.some(fill => fill.visible !== false);
+    if (hasVisibleFills) {
+      console.log('❌ Sibling has visible fills that would be lost');
+      return true;
+    }
+  }
+  
+  // Check for blend modes (allow PASS_THROUGH as it's the default for frames)
+  if ('blendMode' in node && node.blendMode !== 'NORMAL' && node.blendMode !== 'PASS_THROUGH') {
+    console.log(`❌ Sibling has non-standard blend mode: ${node.blendMode}`);
+    return true;
+  }
+  
+  // Check for mask/clip content
+  if ('clipsContent' in node && node.clipsContent === true) {
+    console.log('❌ Sibling has clipsContent enabled');
+    return true;
+  }
+  
+  // Check for layout grid (visual guide)
+  if ('layoutGrids' in node && isArrayValue(node.layoutGrids) && node.layoutGrids.length > 0) {
+    const hasVisibleGrids = node.layoutGrids.some(grid => grid.visible !== false);
+    if (hasVisibleGrids) {
+      console.log('❌ Sibling has visible layout grids');
+      return true;
+    }
+  }
+  
+  // Check for export settings
+  if ('exportSettings' in node && isArrayValue(node.exportSettings) && node.exportSettings.length > 0) {
+    console.log('❌ Sibling has export settings');
+    return true;
+  }
+  
+  // Check for component-related properties
+  if ('componentPropertyReferences' in node && Object.keys(node.componentPropertyReferences || {}).length > 0) {
+    console.log('❌ Sibling has component property references');
+    return true;
+  }
+  
+  // Check for style references that would be lost
+  if ('fillStyleId' in node && isStringValue(node.fillStyleId) && node.fillStyleId !== '') {
+    console.log('❌ Sibling has fill style reference');
+    return true;
+  }
+  
+  if ('strokeStyleId' in node && isStringValue(node.strokeStyleId) && node.strokeStyleId !== '') {
+    console.log('❌ Sibling has stroke style reference');
+    return true;
+  }
+  
+  if ('effectStyleId' in node && isStringValue(node.effectStyleId) && node.effectStyleId !== '') {
+    console.log('❌ Sibling has effect style reference');
+    return true;
+  }
+  
+  // Check for constraints (important for responsive behavior)
+  if ('constraints' in node && node.constraints) {
+    try {
+      const constraints = node.constraints;
+      if (constraints.horizontal !== 'MIN' || constraints.vertical !== 'MIN') {
+        console.log(`❌ Sibling has non-default constraints: horizontal=${constraints.horizontal}, vertical=${constraints.vertical}`);
+        return true;
+      }
+    } catch (error) {
+      // If constraints checking fails, be conservative and block dissolution
+      console.log('❌ Could not verify sibling constraints');
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode, requireZeroPadding: boolean = false): boolean {
   console.log(`\n🔍 SELECTIVE COMPATIBILITY CHECK: "${safeGetNodeName(sibling)}" in "${safeGetNodeName(parent)}"${requireZeroPadding ? ' (padding:0 required)' : ''}`);
   
@@ -603,6 +705,11 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode,
   if (hasComplexFeatures(sibling)) {
     console.log(`❌ Partial dissolution skipped: sibling "${safeGetNodeName(sibling)}" has complex features`);
     return false;
+  }
+  
+  // Check for unsafe visual properties that would be lost during dissolution
+  if (hasUnsafeVisualProperties(sibling)) {
+    return false; // Logging handled within the helper function
   }
   
   // Check padding requirement for partial dissolution
@@ -638,107 +745,6 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode,
   if (Math.abs(siblingSpacing.impliedGapPixels - parentSpacing.impliedGapPixels) > 0.01) {
     console.log(`❌ Gap values don't match: ${siblingSpacing.impliedGapPixels}px vs ${parentSpacing.impliedGapPixels}px`);
     return false;
-  }
-  
-  // ENHANCED VISUAL PROPERTIES CHECKS - STRICT RULES FOR DISSOLUTION
-  // Since dissolution completely removes the frame, we must be extremely conservative
-  // about ANY visual properties that would be lost
-  
-  // Check for strokes
-  if (hasStroke(sibling)) {
-    console.log('❌ Sibling has strokes');
-    return false;
-  }
-  
-  // Check for effects
-  if (hasEffects(sibling)) {
-    console.log('❌ Sibling has effects');
-    return false;
-  }
-  
-  // Check for corner radius
-  if (hasCornerRadius(sibling)) {
-    console.log('❌ Sibling has corner radius');
-    return false;
-  }
-  
-  // Check opacity
-  if (sibling.opacity !== 1) {
-    console.log('❌ Sibling has opacity ≠ 1');
-    return false;
-  }
-  
-  // ENHANCED: Check for visible fills that would be lost
-  if ('fills' in sibling && isArrayValue(sibling.fills) && sibling.fills.length > 0) {
-    const hasVisibleFills = sibling.fills.some(fill => fill.visible !== false);
-    if (hasVisibleFills) {
-      console.log('❌ Sibling has visible fills that would be lost');
-      return false;
-    }
-  }
-  
-  // FIXED: Check for blend modes (allow PASS_THROUGH as it's the default for frames)
-  if ('blendMode' in sibling && sibling.blendMode !== 'NORMAL' && sibling.blendMode !== 'PASS_THROUGH') {
-    console.log(`❌ Sibling has non-standard blend mode: ${sibling.blendMode}`);
-    return false;
-  }
-  
-  // ENHANCED: Check for mask/clip content
-  if ('clipsContent' in sibling && sibling.clipsContent === true) {
-    console.log('❌ Sibling has clipsContent enabled');
-    return false;
-  }
-  
-  // ENHANCED: Check for layout grid (visual guide)
-  if ('layoutGrids' in sibling && isArrayValue(sibling.layoutGrids) && sibling.layoutGrids.length > 0) {
-    const hasVisibleGrids = sibling.layoutGrids.some(grid => grid.visible !== false);
-    if (hasVisibleGrids) {
-      console.log('❌ Sibling has visible layout grids');
-      return false;
-    }
-  }
-  
-  // ENHANCED: Check for export settings
-  if ('exportSettings' in sibling && isArrayValue(sibling.exportSettings) && sibling.exportSettings.length > 0) {
-    console.log('❌ Sibling has export settings');
-    return false;
-  }
-  
-  // ENHANCED: Check for component-related properties
-  if ('componentPropertyReferences' in sibling && Object.keys(sibling.componentPropertyReferences || {}).length > 0) {
-    console.log('❌ Sibling has component property references');
-    return false;
-  }
-  
-  // ENHANCED: Check for style references that would be lost
-  if ('fillStyleId' in sibling && isStringValue(sibling.fillStyleId) && sibling.fillStyleId !== '') {
-    console.log('❌ Sibling has fill style reference');
-    return false;
-  }
-  
-  if ('strokeStyleId' in sibling && isStringValue(sibling.strokeStyleId) && sibling.strokeStyleId !== '') {
-    console.log('❌ Sibling has stroke style reference');
-    return false;
-  }
-  
-  if ('effectStyleId' in sibling && isStringValue(sibling.effectStyleId) && sibling.effectStyleId !== '') {
-    console.log('❌ Sibling has effect style reference');
-    return false;
-  }
-  
-  // ENHANCED: Check for constraints (important for responsive behavior)
-  if ('constraints' in sibling && sibling.constraints) {
-    try {
-      const constraints = sibling.constraints;
-      if (constraints.horizontal !== 'MIN' || constraints.vertical !== 'MIN') {
-        console.log(`❌ Sibling has non-default constraints: horizontal=${constraints.horizontal}, vertical=${constraints.vertical}`);
-        return false;
-      }
-    } catch (error) {
-      // If constraints checking fails, be conservative and block dissolution
-      console.log('❌ Could not verify sibling constraints');
-      return false;
-    }
   }
   
   // Check fill compatibility with parent (less relevant since we're not merging, but good to verify)
