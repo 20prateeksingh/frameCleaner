@@ -1,8 +1,8 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Production V1
+// Frame Cleaner Plugin - Complete TypeScript with Enhanced Selective Sibling Optimization + V1 Safety Checks
 // Optimizes auto-layout structures by merging unnecessary nested frames and selectively dissolving compatible siblings
-// V1 Limitations: Blocks optimization for complex features (transforms, prototypes, gradients, etc.)
+// Features: Layout sizing inheritance, selective sibling dissolution with full→partial hierarchy, cross-direction padding validation, V1 complexity blocking
 
 // Type definitions
 interface CleaningResults {
@@ -83,93 +83,6 @@ function isStringValue(value: string | symbol): value is string {
   return typeof value === 'string';
 }
 
-// V1 Safety checks for complex features
-function hasTransforms(node: FrameNode | GroupNode): boolean {
-  try {
-    if ('rotation' in node && node.rotation !== 0) return true;
-    if ('relativeTransform' in node) {
-      const transform = node.relativeTransform;
-      // Check if transform is not identity matrix
-      if (transform[0][0] !== 1 || transform[0][1] !== 0 || transform[0][2] !== 0 ||
-          transform[1][0] !== 0 || transform[1][1] !== 1 || transform[1][2] !== 0) {
-        return true;
-      }
-    }
-  } catch (error) {
-    return true; // Conservative: block if we can't check
-  }
-  return false;
-}
-
-function hasComplexFills(node: FrameNode | GroupNode): boolean {
-  try {
-    if (!('fills' in node) || !isArrayValue(node.fills)) return false;
-    
-    return node.fills.some(fill => {
-      if (fill.visible === false) return false;
-      return fill.type === 'GRADIENT_LINEAR' || 
-             fill.type === 'GRADIENT_RADIAL' || 
-             fill.type === 'GRADIENT_ANGULAR' || 
-             fill.type === 'GRADIENT_DIAMOND' || 
-             fill.type === 'IMAGE';
-    });
-  } catch (error) {
-    return true;
-  }
-}
-
-function hasPrototypeConnections(node: FrameNode | GroupNode): boolean {
-  try {
-    if ('reactions' in node && isArrayValue(node.reactions) && node.reactions.length > 0) {
-      return true;
-    }
-  } catch (error) {
-    return true;
-  }
-  return false;
-}
-
-function hasAdvancedLayoutFeatures(node: FrameNode | GroupNode): boolean {
-  try {
-    if (!isFrameNode(node) || !hasAutoLayout(node)) return false;
-    
-    // Check for wrap mode
-    if ('layoutWrap' in node && node.layoutWrap !== 'NO_WRAP') return true;
-    
-    // Check for baseline alignment
-    if ('counterAxisAlignItems' in node && node.counterAxisAlignItems === 'BASELINE') return true;
-    
-  } catch (error) {
-    return true;
-  }
-  return false;
-}
-
-function hasVisualComplexity(node: FrameNode | GroupNode): boolean {
-  try {
-    // Check for clipsContent
-    if ('clipsContent' in node && node.clipsContent === true) return true;
-    
-    // Check for visible layout grids
-    if ('layoutGrids' in node && isArrayValue(node.layoutGrids) && node.layoutGrids.length > 0) {
-      const hasVisibleGrids = node.layoutGrids.some(grid => grid.visible !== false);
-      if (hasVisibleGrids) return true;
-    }
-    
-  } catch (error) {
-    return true;
-  }
-  return false;
-}
-
-function hasComplexFeatures(node: FrameNode | GroupNode): boolean {
-  return hasTransforms(node) || 
-         hasComplexFills(node) || 
-         hasPrototypeConnections(node) || 
-         hasAdvancedLayoutFeatures(node) || 
-         hasVisualComplexity(node);
-}
-
 function getChildSpacingInfo(childFrame: FrameNode): {
   hasAutoGap: boolean;
   itemSpacing: number;
@@ -188,18 +101,23 @@ function getChildSpacingInfo(childFrame: FrameNode): {
   const itemSpacing = childFrame.itemSpacing;
   const primaryAlign = childFrame.primaryAxisAlignItems;
   
+  // Auto gap when SPACE_BETWEEN (regardless of itemSpacing value)
   const hasAutoGap = primaryAlign === 'SPACE_BETWEEN';
   
   if (hasAutoGap) {
+    // For SPACE_BETWEEN, itemSpacing shows Figma's current calculated gap
+    // This preserves the auto behavior while giving us the current pixel value
     const impliedGapPixels = typeof itemSpacing === 'number' ? itemSpacing : 0;
+    
     return {
       hasAutoGap: true,
-      itemSpacing: 0,
+      itemSpacing: 0, // Not relevant for auto-gap
       impliedGapPixels: impliedGapPixels,
       primaryAxisAlignItems: 'SPACE_BETWEEN'
     };
   }
   
+  // Fixed numeric spacing
   if (typeof itemSpacing === 'number') {
     return {
       hasAutoGap: false,
@@ -209,6 +127,7 @@ function getChildSpacingInfo(childFrame: FrameNode): {
     };
   }
   
+  // Handle symbol/mixed values - treat as 0 spacing
   if (typeof itemSpacing === 'symbol') {
     return {
       hasAutoGap: false,
@@ -218,12 +137,50 @@ function getChildSpacingInfo(childFrame: FrameNode): {
     };
   }
   
+  // Fallback
   return {
     hasAutoGap: false,
     itemSpacing: 0,
     impliedGapPixels: 0,
     primaryAxisAlignItems: primaryAlign
   };
+}
+
+function calculateImpliedGap(container: FrameNode): number {
+  if (!hasAutoLayout(container) || container.primaryAxisAlignItems !== 'SPACE_BETWEEN') {
+    return 0;
+  }
+  
+  // For SPACE_BETWEEN, Figma already calculates and stores the gap in itemSpacing
+  // So we can just read it directly instead of manually calculating
+  const currentGap = container.itemSpacing;
+  if (typeof currentGap === 'number') {
+    return currentGap;
+  }
+  
+  // Fallback: manual calculation if itemSpacing is not available
+  const children = getLayoutChildren(container);
+  if (children.length < 2) return 0;
+  
+  try {
+    const containerSize = container.layoutMode === 'HORIZONTAL' ? container.width : container.height;
+    const childrenTotalSize = children.reduce((sum, child) => {
+      if (!nodeExists(child)) return sum;
+      const childSize = container.layoutMode === 'HORIZONTAL' ? child.width : child.height;
+      return sum + childSize;
+    }, 0);
+    
+    // Account for padding
+    const paddingStart = container.layoutMode === 'HORIZONTAL' ? container.paddingLeft : container.paddingTop;
+    const paddingEnd = container.layoutMode === 'HORIZONTAL' ? container.paddingRight : container.paddingBottom;
+    
+    const availableSpace = containerSize - childrenTotalSize - paddingStart - paddingEnd;
+    const numberOfGaps = children.length - 1;
+    
+    return numberOfGaps > 0 ? availableSpace / numberOfGaps : 0;
+  } catch (error) {
+    return 0;
+  }
 }
 
 // Safe node access helpers
@@ -245,6 +202,15 @@ function safeGetNodeName(node: BaseNode): string {
   }
 }
 
+function safeGetNodeType(node: BaseNode): string {
+  try {
+    if (!nodeExists(node)) return 'REMOVED';
+    return node.type;
+  } catch (error) {
+    return 'INACCESSIBLE';
+  }
+}
+
 function safeGetDimensions(node: SceneNode): { width: number; height: number } {
   try {
     if (!nodeExists(node)) return { width: 0, height: 0 };
@@ -252,6 +218,70 @@ function safeGetDimensions(node: SceneNode): { width: number; height: number } {
   } catch (error) {
     return { width: 0, height: 0 };
   }
+}
+
+// V1 Safety Check - Detect complex features that should block optimization
+function hasComplexFeatures(node: FrameNode | GroupNode): boolean {
+  if (!nodeExists(node)) return false;
+  
+  // Check rotation/transforms
+  if ('rotation' in node && node.rotation !== 0) {
+    console.log(`❌ Node "${safeGetNodeName(node)}" has rotation/transform`);
+    return true;
+  }
+  
+  // Check for complex fills (gradients, images)
+  if ('fills' in node && isArrayValue(node.fills)) {
+    const hasComplexFills = node.fills.some(fill => {
+      return fill.type === 'GRADIENT_LINEAR' || 
+             fill.type === 'GRADIENT_RADIAL' || 
+             fill.type === 'GRADIENT_ANGULAR' || 
+             fill.type === 'GRADIENT_DIAMOND' ||
+             fill.type === 'IMAGE';
+    });
+    if (hasComplexFills) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has gradient or image fills`);
+      return true;
+    }
+  }
+  
+  // Check clipsContent (already partially checked but being explicit)
+  if ('clipsContent' in node && node.clipsContent === true) {
+    console.log(`❌ Node "${safeGetNodeName(node)}" has clipsContent enabled`);
+    return true;
+  }
+  
+  // Check layout grids
+  if ('layoutGrids' in node && isArrayValue(node.layoutGrids) && node.layoutGrids.length > 0) {
+    const hasVisibleGrids = node.layoutGrids.some(grid => grid.visible !== false);
+    if (hasVisibleGrids) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has visible layout grids`);
+      return true;
+    }
+  }
+  
+  // Check prototype connections/interactions
+  if ('reactions' in node && isArrayValue(node.reactions) && node.reactions.length > 0) {
+    console.log(`❌ Node "${safeGetNodeName(node)}" has prototype interactions`);
+    return true;
+  }
+  
+  // Check wrap mode and baseline alignment (auto-layout specific)
+  if (isFrameNode(node) && hasAutoLayout(node)) {
+    // Check wrap mode
+    if ('layoutWrap' in node && node.layoutWrap !== 'NO_WRAP') {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has wrap mode enabled`);
+      return true;
+    }
+    
+    // Check baseline alignment
+    if (node.counterAxisAlignItems === 'BASELINE') {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has baseline alignment`);
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 // Layout sizing inheritance logic
@@ -325,7 +355,7 @@ function applyLayoutSizingInheritance(
         grandchild.layoutSizingVertical = newVertical as 'FIXED' | 'FILL' | 'HUG';
       }
     } catch (error) {
-      // Skip inheritance on error
+      console.warn(`Error applying sizing inheritance:`, error);
     }
   });
 }
@@ -357,14 +387,19 @@ function determineAlignmentInheritance(
     return { inheritPrimaryAxis: false, inheritCounterAxis: false, forceSpaceBetween: false };
   }
   
+  // CRITICAL: Check for single-child merge FIRST (highest priority)
+  // Single-child merges must preserve exact visual positioning
   const layoutChildren = getLayoutChildren(parentFrame);
   const isSingleChildMerge = layoutChildren.length === 1;
   
   if (isSingleChildMerge) {
+    console.log(`🎯 SINGLE-CHILD MERGE: Always inheriting ALL alignment properties to preserve visual positioning`);
+    
+    // For single-child merges with auto-gap, we still inherit counter axis
     if (childSpacingInfo?.hasAutoGap) {
       return { 
         inheritPrimaryAxis: true, 
-        inheritCounterAxis: true,
+        inheritCounterAxis: true, // Now inherits counter axis for single-child!
         forceSpaceBetween: true 
       };
     }
@@ -376,15 +411,19 @@ function determineAlignmentInheritance(
     };
   }
   
+  // For multi-child scenarios only: Handle auto-gap
   if (childSpacingInfo?.hasAutoGap) {
+    console.log(`🔄 MULTI-CHILD AUTO-GAP: Inheriting primary axis only`);
     return { 
       inheritPrimaryAxis: true, 
-      inheritCounterAxis: false,
+      inheritCounterAxis: false, // Only for multi-child scenarios
       forceSpaceBetween: true 
     };
   }
   
+  // For multi-child scenarios: If layout mode is changing, inherit ALL alignment properties
   if (parentLayoutMode !== childLayoutMode) {
+    console.log(`🔄 Layout mode changing: ${parentLayoutMode} → ${childLayoutMode} - inheriting ALL alignment properties`);
     return { 
       inheritPrimaryAxis: true, 
       inheritCounterAxis: true, 
@@ -392,6 +431,7 @@ function determineAlignmentInheritance(
     };
   }
   
+  // Layout mode staying same - use existing sizing-based logic (for multi-child scenarios)
   let primaryAxisSizing: string;
   let counterAxisSizing: string;
   
@@ -411,6 +451,8 @@ function determineAlignmentInheritance(
   
   const inheritPrimaryAxis = primaryAxisSizing === 'FILL';
   const inheritCounterAxis = counterAxisSizing === 'FILL';
+  
+  console.log(`🔄 Multi-child scenario with unchanged layout mode: ${parentLayoutMode} - using sizing-based inheritance (primary: ${inheritPrimaryAxis}, counter: ${inheritCounterAxis})`);
   
   return { inheritPrimaryAxis, inheritCounterAxis, forceSpaceBetween: false };
 }
@@ -504,13 +546,15 @@ function dimensionsMatch(parent: FrameNode | GroupNode, child: FrameNode | Group
   }
 }
 
-// Enhanced Selective Sibling Optimization Functions
+// ===== ENHANCED SELECTIVE SIBLING OPTIMIZATION FUNCTIONS =====
+
 function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): CrossDirectionPadding {
   if (!hasAutoLayout(frame)) {
     return { top: 0, bottom: 0, left: 0, right: 0 };
   }
   
   if (parentLayoutMode === 'HORIZONTAL') {
+    // Cross direction is vertical, so only top/bottom padding matters
     return { 
       top: frame.paddingTop, 
       bottom: frame.paddingBottom, 
@@ -518,6 +562,7 @@ function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): C
       right: 0 
     };
   } else if (parentLayoutMode === 'VERTICAL') {
+    // Cross direction is horizontal, so only left/right padding matters  
     return { 
       top: 0, 
       bottom: 0, 
@@ -539,63 +584,170 @@ function siblingHasZeroPadding(sibling: FrameNode): boolean {
 }
 
 function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode, requireZeroPadding: boolean = false): boolean {
-  // V1 SAFETY: Block complex features
-  if (hasComplexFeatures(sibling)) return false;
+  console.log(`\n🔍 SELECTIVE COMPATIBILITY CHECK: "${safeGetNodeName(sibling)}" in "${safeGetNodeName(parent)}"${requireZeroPadding ? ' (padding:0 required)' : ''}`);
   
-  if (!hasAutoLayout(sibling)) return false;
+  // Must be frame with auto-layout
+  if (!hasAutoLayout(sibling)) {
+    console.log('❌ Sibling lacks auto-layout');
+    return false;
+  }
   
+  // Must have children
   const layoutChildren = getLayoutChildren(sibling);
-  if (layoutChildren.length === 0) return false;
+  if (layoutChildren.length === 0) {
+    console.log('❌ Empty sibling');
+    return false;
+  }
   
-  if (requireZeroPadding && !siblingHasZeroPadding(sibling)) return false;
+  // V1 SAFETY: For partial dissolution, skip individual siblings with complex features
+  if (hasComplexFeatures(sibling)) {
+    console.log(`❌ Partial dissolution skipped: sibling "${safeGetNodeName(sibling)}" has complex features`);
+    return false;
+  }
   
+  // Check padding requirement for partial dissolution
+  if (requireZeroPadding && !siblingHasZeroPadding(sibling)) {
+    console.log('❌ Sibling has padding (required to be 0 for partial dissolution)');
+    return false;
+  }
+  
+  // Layout mode must match parent (with single-child exception)
   const parentLayoutMode = parent.layoutMode;
   const siblingException = layoutChildren.length === 1;
   
-  if (!siblingException && sibling.layoutMode !== parentLayoutMode) return false;
+  if (!siblingException && sibling.layoutMode !== parentLayoutMode) {
+    console.log(`❌ Sibling layoutMode (${sibling.layoutMode}) doesn't match parent (${parentLayoutMode})`);
+    return false;
+  }
   
-  // Check gap compatibility
+  // Check gap compatibility - THIS IS THE KEY MATHEMATICAL CONSTRAINT!
   const siblingSpacing = getChildSpacingInfo(sibling);
   const parentSpacing = getChildSpacingInfo(parent);
   
-  if (siblingSpacing.hasAutoGap !== parentSpacing.hasAutoGap) return false;
+  console.log(`🔍 GAP COMPATIBILITY CHECK:`);
+  console.log(`  Parent gap: ${parentSpacing.impliedGapPixels}px (hasAutoGap: ${parentSpacing.hasAutoGap})`);
+  console.log(`  Sibling gap: ${siblingSpacing.impliedGapPixels}px (hasAutoGap: ${siblingSpacing.hasAutoGap})`);
   
-  if (Math.abs(siblingSpacing.impliedGapPixels - parentSpacing.impliedGapPixels) > 0.01) return false;
-  
-  // Visual properties checks
-  if (hasStroke(sibling)) return false;
-  if (hasEffects(sibling)) return false;
-  if (hasCornerRadius(sibling)) return false;
-  if (sibling.opacity !== 1) return false;
-  
-  if ('fills' in sibling && isArrayValue(sibling.fills) && sibling.fills.length > 0) {
-    const hasVisibleFills = sibling.fills.some(fill => fill.visible !== false);
-    if (hasVisibleFills) return false;
+  // For auto-gap, both must use auto-gap AND have identical gap values
+  if (siblingSpacing.hasAutoGap !== parentSpacing.hasAutoGap) {
+    console.log(`❌ Gap type mismatch: Parent auto-gap ${parentSpacing.hasAutoGap} vs Sibling auto-gap ${siblingSpacing.hasAutoGap}`);
+    return false;
   }
   
-  if ('blendMode' in sibling && sibling.blendMode !== 'NORMAL' && sibling.blendMode !== 'PASS_THROUGH') return false;
+  // Gap values must be identical
+  if (Math.abs(siblingSpacing.impliedGapPixels - parentSpacing.impliedGapPixels) > 0.01) {
+    console.log(`❌ Gap values don't match: ${siblingSpacing.impliedGapPixels}px vs ${parentSpacing.impliedGapPixels}px`);
+    return false;
+  }
   
-  if ('exportSettings' in sibling && isArrayValue(sibling.exportSettings) && sibling.exportSettings.length > 0) return false;
+  // ENHANCED VISUAL PROPERTIES CHECKS - STRICT RULES FOR DISSOLUTION
+  // Since dissolution completely removes the frame, we must be extremely conservative
+  // about ANY visual properties that would be lost
   
-  if ('componentPropertyReferences' in sibling && Object.keys(sibling.componentPropertyReferences || {}).length > 0) return false;
+  // Check for strokes
+  if (hasStroke(sibling)) {
+    console.log('❌ Sibling has strokes');
+    return false;
+  }
   
-  if ('fillStyleId' in sibling && isStringValue(sibling.fillStyleId) && sibling.fillStyleId !== '') return false;
+  // Check for effects
+  if (hasEffects(sibling)) {
+    console.log('❌ Sibling has effects');
+    return false;
+  }
   
-  if ('strokeStyleId' in sibling && isStringValue(sibling.strokeStyleId) && sibling.strokeStyleId !== '') return false;
+  // Check for corner radius
+  if (hasCornerRadius(sibling)) {
+    console.log('❌ Sibling has corner radius');
+    return false;
+  }
   
-  if ('effectStyleId' in sibling && isStringValue(sibling.effectStyleId) && sibling.effectStyleId !== '') return false;
+  // Check opacity
+  if (sibling.opacity !== 1) {
+    console.log('❌ Sibling has opacity ≠ 1');
+    return false;
+  }
   
-  if ('constraints' in sibling && sibling.constraints) {
-    try {
-      const constraints = sibling.constraints;
-      if (constraints.horizontal !== 'MIN' || constraints.vertical !== 'MIN') return false;
-    } catch (error) {
+  // ENHANCED: Check for visible fills that would be lost
+  if ('fills' in sibling && isArrayValue(sibling.fills) && sibling.fills.length > 0) {
+    const hasVisibleFills = sibling.fills.some(fill => fill.visible !== false);
+    if (hasVisibleFills) {
+      console.log('❌ Sibling has visible fills that would be lost');
       return false;
     }
   }
   
-  if (!fillsAreCompatible(parent, sibling, false)) return false;
+  // FIXED: Check for blend modes (allow PASS_THROUGH as it's the default for frames)
+  if ('blendMode' in sibling && sibling.blendMode !== 'NORMAL' && sibling.blendMode !== 'PASS_THROUGH') {
+    console.log(`❌ Sibling has non-standard blend mode: ${sibling.blendMode}`);
+    return false;
+  }
   
+  // ENHANCED: Check for mask/clip content
+  if ('clipsContent' in sibling && sibling.clipsContent === true) {
+    console.log('❌ Sibling has clipsContent enabled');
+    return false;
+  }
+  
+  // ENHANCED: Check for layout grid (visual guide)
+  if ('layoutGrids' in sibling && isArrayValue(sibling.layoutGrids) && sibling.layoutGrids.length > 0) {
+    const hasVisibleGrids = sibling.layoutGrids.some(grid => grid.visible !== false);
+    if (hasVisibleGrids) {
+      console.log('❌ Sibling has visible layout grids');
+      return false;
+    }
+  }
+  
+  // ENHANCED: Check for export settings
+  if ('exportSettings' in sibling && isArrayValue(sibling.exportSettings) && sibling.exportSettings.length > 0) {
+    console.log('❌ Sibling has export settings');
+    return false;
+  }
+  
+  // ENHANCED: Check for component-related properties
+  if ('componentPropertyReferences' in sibling && Object.keys(sibling.componentPropertyReferences || {}).length > 0) {
+    console.log('❌ Sibling has component property references');
+    return false;
+  }
+  
+  // ENHANCED: Check for style references that would be lost
+  if ('fillStyleId' in sibling && isStringValue(sibling.fillStyleId) && sibling.fillStyleId !== '') {
+    console.log('❌ Sibling has fill style reference');
+    return false;
+  }
+  
+  if ('strokeStyleId' in sibling && isStringValue(sibling.strokeStyleId) && sibling.strokeStyleId !== '') {
+    console.log('❌ Sibling has stroke style reference');
+    return false;
+  }
+  
+  if ('effectStyleId' in sibling && isStringValue(sibling.effectStyleId) && sibling.effectStyleId !== '') {
+    console.log('❌ Sibling has effect style reference');
+    return false;
+  }
+  
+  // ENHANCED: Check for constraints (important for responsive behavior)
+  if ('constraints' in sibling && sibling.constraints) {
+    try {
+      const constraints = sibling.constraints;
+      if (constraints.horizontal !== 'MIN' || constraints.vertical !== 'MIN') {
+        console.log(`❌ Sibling has non-default constraints: horizontal=${constraints.horizontal}, vertical=${constraints.vertical}`);
+        return false;
+      }
+    } catch (error) {
+      // If constraints checking fails, be conservative and block dissolution
+      console.log('❌ Could not verify sibling constraints');
+      return false;
+    }
+  }
+  
+  // Check fill compatibility with parent (less relevant since we're not merging, but good to verify)
+  if (!fillsAreCompatible(parent, sibling, false)) {
+    console.log('❌ Incompatible fills with parent');
+    return false;
+  }
+  
+  console.log('✅ Sibling is compatible for selective dissolution');
   return true;
 }
 
@@ -607,19 +759,49 @@ function canAllSiblingsBeDissolvedTogether(parentFrame: FrameNode): boolean {
   
   if (siblingFrames.length === 0) return false;
   
+  console.log(`\n🔍 FULL DISSOLUTION CHECK: Checking if ALL ${siblingFrames.length} siblings can be dissolved together in "${safeGetNodeName(parentFrame)}"`);
+  
+  // CRITICAL: For full dissolution, ALL siblings must have zero padding
   for (const sibling of siblingFrames) {
-    if (!nodeExists(sibling)) return false;
-    if (!siblingHasZeroPadding(sibling)) return false;
+    if (!nodeExists(sibling)) {
+      console.log(`❌ Sibling no longer exists`);
+      return false;
+    }
+    
+    if (!siblingHasZeroPadding(sibling)) {
+      console.log(`❌ Full dissolution blocked: sibling "${safeGetNodeName(sibling)}" has padding (full dissolution requires ALL siblings to have zero padding)`);
+      return false;
+    }
   }
   
+  // V1 SAFETY: For full dissolution, block if ANY sibling has complex features
   for (const sibling of siblingFrames) {
-    if (!canSiblingBeDissolvedSelectively(sibling, parentFrame, false)) return false;
+    if (!nodeExists(sibling)) {
+      console.log(`❌ Sibling no longer exists`);
+      return false;
+    }
+    
+    if (hasComplexFeatures(sibling)) {
+      console.log(`❌ Full dissolution blocked: sibling "${safeGetNodeName(sibling)}" has complex features`);
+      return false;
+    }
   }
   
+  // Every sibling must also be compatible (gap matching, visual properties, etc.)
+  for (const sibling of siblingFrames) {
+    if (!canSiblingBeDissolvedSelectively(sibling, parentFrame, false)) {
+      console.log(`❌ Full dissolution blocked by incompatible sibling: "${safeGetNodeName(sibling)}"`);
+      return false;
+    }
+  }
+  
+  console.log(`✅ ALL siblings have zero padding AND are compatible for full dissolution`);
   return true;
 }
 
 function dissolveAllSiblings(parentFrame: FrameNode): void {
+  console.log(`\n🚀 FULL SIBLING DISSOLUTION: Dissolving ALL siblings in "${safeGetNodeName(parentFrame)}"`);
+  
   if (!nodeExists(parentFrame) || !hasAutoLayout(parentFrame)) return;
   
   const layoutChildren = getLayoutChildren(parentFrame);
@@ -630,22 +812,33 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
   let totalChildrenPromoted = 0;
   let paddingTransferred = false;
   
+  // Process siblings in reverse order to avoid index shifting
   for (let i = siblingFrames.length - 1; i >= 0; i--) {
     const sibling = siblingFrames[i];
     
     if (!nodeExists(sibling)) continue;
     
+    console.log(`📦 Dissolving sibling ${i + 1}/${siblingFrames.length}: "${safeGetNodeName(sibling)}"`);
+    
     try {
+      // Get sibling's position among current parent children (this changes as we remove siblings)
       const currentParentChildren = getLayoutChildren(parentFrame);
       const siblingIndex = currentParentChildren.findIndex(child => child === sibling);
       
-      if (siblingIndex === -1) continue;
+      if (siblingIndex === -1) {
+        console.log(`❌ Could not find sibling position`);
+        continue;
+      }
       
+      // Transfer cross-direction padding only from the first sibling
       if (!paddingTransferred && hasAutoLayout(sibling)) {
         const parentLayoutMode = parentFrame.layoutMode;
         const siblingPadding = getCrossDirectionPadding(sibling, parentLayoutMode);
         
         if (siblingPadding.top > 0 || siblingPadding.bottom > 0 || siblingPadding.left > 0 || siblingPadding.right > 0) {
+          console.log(`🔧 Transferring cross-direction padding from first sibling to parent`);
+          console.log(`  Padding: top:${siblingPadding.top}, bottom:${siblingPadding.bottom}, left:${siblingPadding.left}, right:${siblingPadding.right}`);
+          
           parentFrame.paddingLeft += siblingPadding.left;
           parentFrame.paddingRight += siblingPadding.right;
           parentFrame.paddingTop += siblingPadding.top;
@@ -655,9 +848,12 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
         }
       }
       
+      // Collect and move sibling's children
       if (hasChildren(sibling)) {
         const childrenToMove = [...sibling.children].filter(child => nodeExists(child));
+        console.log(`  📦 Moving ${childrenToMove.length} children from sibling to parent`);
         
+        // Insert children in reverse order to maintain positioning
         for (let j = childrenToMove.length - 1; j >= 0; j--) {
           const child = childrenToMove[j];
           if (nodeExists(child) && nodeExists(parentFrame)) {
@@ -667,64 +863,98 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
         }
       }
       
+      // Remove the empty sibling
       if (nodeExists(sibling)) {
         sibling.remove();
         cleaningResults.siblingsRemoved++;
       }
       
     } catch (error) {
-      // Skip this sibling on error
+      console.warn(`Error dissolving sibling "${safeGetNodeName(sibling)}":`, error);
     }
   }
   
+  console.log(`✅ Full dissolution complete: ${siblingFrames.length} siblings dissolved, ${totalChildrenPromoted} children promoted`);
   cleaningResults.siblingGroupsOptimized++;
 }
 
 function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTransferPadding: boolean = true): void {
-  if (!nodeExists(sibling) || !nodeExists(parent)) return;
+  console.log(`\n🚀 DISSOLVING SINGLE SIBLING: "${safeGetNodeName(sibling)}" → promoting children to "${safeGetNodeName(parent)}"`);
   
+  if (!nodeExists(sibling) || !nodeExists(parent)) {
+    console.log('❌ Sibling or parent no longer exists');
+    return;
+  }
+  
+  // Get sibling's position among parent's children
   const parentChildren = getLayoutChildren(parent);
   const siblingIndex = parentChildren.findIndex(child => child === sibling);
   
-  if (siblingIndex === -1) return;
+  if (siblingIndex === -1) {
+    console.log('❌ Could not find sibling position in parent');
+    return;
+  }
   
+  console.log(`📍 Sibling position: ${siblingIndex} of ${parentChildren.length}`);
+  
+  // Transfer cross-direction padding only if this is the first dissolution in the group
   if (shouldTransferPadding && hasAutoLayout(sibling)) {
     const parentLayoutMode = parent.layoutMode;
     const siblingPadding = getCrossDirectionPadding(sibling, parentLayoutMode);
     
     if (siblingPadding.top > 0 || siblingPadding.bottom > 0 || siblingPadding.left > 0 || siblingPadding.right > 0) {
+      console.log(`🔧 Transferring sibling cross-direction padding to parent (first dissolution only)`);
+      console.log(`  Sibling padding: top:${siblingPadding.top}, bottom:${siblingPadding.bottom}, left:${siblingPadding.left}, right:${siblingPadding.right}`);
+      
       parent.paddingLeft += siblingPadding.left;
       parent.paddingRight += siblingPadding.right;
       parent.paddingTop += siblingPadding.top;
       parent.paddingBottom += siblingPadding.bottom;
+      
+      console.log(`  New parent padding: ${parent.paddingTop}, ${parent.paddingRight}, ${parent.paddingBottom}, ${parent.paddingLeft}`);
     }
+  } else if (!shouldTransferPadding) {
+    console.log(`ℹ️ Skipping padding transfer (already transferred for this group)`);
   }
   
+  // Collect sibling's children and explicitly move them BEFORE removing sibling
   const siblingChildren: SceneNode[] = [];
   
   if (hasChildren(sibling)) {
     const children = [...sibling.children].filter(child => nodeExists(child));
+    console.log(`📦 Found ${children.length} children to promote`);
     
+    // Insert children in reverse order to maintain correct positioning
+    // This prevents index shifting from affecting the order
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
-      siblingChildren.unshift(child);
+      const childName = safeGetNodeName(child);
+      console.log(`  📦 Moving child ${i}: "${childName}" to position ${siblingIndex}`);
+      siblingChildren.unshift(child); // Add to front to maintain original order
       
       try {
+        // Insert all children at the same position (sibling's position)
+        // Later insertions push earlier ones forward, maintaining order
         if (nodeExists(child) && nodeExists(parent)) {
           parent.insertChild(siblingIndex, child);
         }
       } catch (error) {
-        // Skip this child on error
+        console.warn(`Error moving child ${i}:`, error);
       }
     }
   }
   
+  // Now remove the empty sibling
   try {
+    console.log(`🗑️ Removing empty sibling: "${safeGetNodeName(sibling)}"`);
     sibling.remove();
     cleaningResults.siblingsRemoved++;
   } catch (error) {
+    console.warn(`Error removing sibling:`, error);
     return;
   }
+  
+  console.log(`✅ Selective sibling dissolution complete: ${siblingChildren.length} children promoted`);
 }
 
 function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
@@ -735,41 +965,53 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
   
   if (siblingFrames.length === 0) return;
   
-  // V1 LIMITATION: Skip if any sibling has absolute children
-  for (const siblingFrame of siblingFrames) {
-    if (!nodeExists(siblingFrame)) continue;
-    const absoluteChildren = getAbsoluteChildren(siblingFrame);
-    if (absoluteChildren.length > 0) return;
-  }
+  console.log(`\n🔄 ENHANCED SIBLING OPTIMIZATION: Checking ${siblingFrames.length} frame siblings in "${safeGetNodeName(parentFrame)}"`);
   
+  // STRATEGY 1: Try full dissolution first
   if (canAllSiblingsBeDissolvedTogether(parentFrame)) {
+    console.log(`🎯 FULL DISSOLUTION: All siblings compatible - dissolving together`);
     dissolveAllSiblings(parentFrame);
     return;
   }
   
+  console.log(`ℹ️ Full dissolution not possible - checking partial dissolution (padding:0 only)`);
+  
+  // STRATEGY 2: Partial dissolution with padding:0 requirement
   let dissolvedCount = 0;
   let paddingTransferred = false;
   
+  // Check each sibling individually for dissolution potential (padding:0 required)
+  // Process in reverse order to avoid index shifting issues
   for (let i = siblingFrames.length - 1; i >= 0; i--) {
     const sibling = siblingFrames[i];
     
     if (!nodeExists(sibling)) continue;
     
+    // Require zero padding for partial dissolution
     if (canSiblingBeDissolvedSelectively(sibling, parentFrame, true)) {
+      console.log(`🎯 Sibling "${safeGetNodeName(sibling)}" is compatible for partial dissolution (padding:0)`);
+      
       try {
         dissolveSingleSibling(sibling, parentFrame, !paddingTransferred);
         dissolvedCount++;
-        paddingTransferred = true;
+        paddingTransferred = true; // Only transfer padding once per optimization round
       } catch (error) {
-        // Skip this sibling on error
+        console.warn(`Error dissolving sibling "${safeGetNodeName(sibling)}":`, error);
       }
+    } else {
+      console.log(`ℹ️ Sibling "${safeGetNodeName(sibling)}" not compatible for partial dissolution - keeping as-is`);
     }
   }
   
   if (dissolvedCount > 0) {
+    console.log(`✅ Partial optimization complete: ${dissolvedCount} siblings dissolved in "${safeGetNodeName(parentFrame)}"`);
     cleaningResults.siblingGroupsOptimized++;
+  } else {
+    console.log(`ℹ️ No siblings were compatible for dissolution in "${safeGetNodeName(parentFrame)}"`);
   }
 }
+
+// ===== END ENHANCED SELECTIVE SIBLING OPTIMIZATION =====
 
 // Analysis functions
 function analyzeSelection(): void {
@@ -838,13 +1080,16 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
         results.mergeableFrames++;
       }
       
+      // Check for optimizable siblings (enhanced approach: full vs partial)
       if (isFrameNode(node) && hasAutoLayout(node)) {
         const layoutChildren = getLayoutChildren(node);
         const siblingFrames = layoutChildren.filter(child => isFrameNode(child)) as FrameNode[];
         
+        // Check for full dissolution potential
         if (canAllSiblingsBeDissolvedTogether(node)) {
           results.optimizableSiblingGroups++;
         } else {
+          // Check for partial dissolution potential (padding:0 only)
           let hasPartialOptimization = false;
           siblingFrames.forEach(sibling => {
             if (canSiblingBeDissolvedSelectively(sibling, node, true)) {
@@ -893,6 +1138,7 @@ function cleanFrames(nodes: readonly SceneNode[]): void {
     if (isFrameOrGroup(node)) {
       cleaningResults.framesAnalyzed++;
       
+      // First, recursively clean children (depth-first)
       if (hasChildren(node) && nodeExists(node)) {
         try {
           const childrenCopy = [...node.children];
@@ -904,23 +1150,25 @@ function cleanFrames(nodes: readonly SceneNode[]): void {
             }
           });
         } catch (error) {
-          // Skip children processing on error
+          console.warn(`Error processing children:`, error);
         }
       }
       
+      // Then optimize siblings selectively (after children are cleaned)
       if (nodeExists(node) && isFrameNode(node) && hasAutoLayout(node)) {
         try {
           optimizeSiblingsSelectively(node);
         } catch (error) {
-          // Skip sibling optimization on error
+          console.warn('Error optimizing siblings selectively:', error);
         }
       }
       
+      // Finally, try to merge this frame (single-child optimization)
       if (nodeExists(node) && canBeMerged(node)) {
         try {
           mergeFrame(node);
         } catch (error) {
-          // Skip frame merging on error
+          console.warn(`Error merging frame:`, error);
         }
       }
     }
@@ -952,14 +1200,22 @@ function canBeMerged(node: FrameNode | GroupNode): boolean {
 }
 
 function canSafelyMerge(parent: FrameNode | GroupNode, child: FrameNode | GroupNode): boolean {
-  // V1 SAFETY: Block complex features in both parent and child
-  if (hasComplexFeatures(parent) || hasComplexFeatures(child)) return false;
-  
   const sameDimensions: boolean = dimensionsMatch(parent, child);
   
   if (isGroupNode(parent) || isGroupNode(child)) return false;
   
   if (!hasAutoLayout(parent) || !hasAutoLayout(child)) return false;
+  
+  // V1 SAFETY: Block parent-child merging if either has complex features
+  if (hasComplexFeatures(parent)) {
+    console.log(`❌ Parent-child merge blocked: parent has complex features`);
+    return false;
+  }
+  
+  if (hasComplexFeatures(child)) {
+    console.log(`❌ Parent-child merge blocked: child has complex features`);
+    return false;
+  }
   
   if (!fillsAreCompatible(parent, child, sameDimensions)) return false;
   
@@ -1029,6 +1285,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
   
   const combinedPadding: CombinedPadding = calculateCombinedPadding(parentFrame, childFrame);
   
+  // Store child's layout properties
   let childLayoutMode: 'NONE' | 'HORIZONTAL' | 'VERTICAL' | 'GRID' = 'NONE';
   let childSpacingInfo = {
     hasAutoGap: false,
@@ -1051,6 +1308,16 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       if ('fills' in childFrame && isArrayValue(childFrame.fills)) {
         childFills = childFrame.fills;
       }
+      
+      // DEBUG: Log child's current alignment properties
+      console.log(`📋 CHILD ALIGNMENT PROPERTIES: "${safeGetNodeName(childFrame)}"`);
+      console.log(`  Layout mode: ${childLayoutMode}`);
+      console.log(`  Primary align: ${childSpacingInfo.primaryAxisAlignItems}`);
+      console.log(`  Counter align: ${childCounterAxisAlignItems}`);
+      console.log(`  Primary sizing: ${childPrimaryAxisSizingMode}`);
+      console.log(`  Counter sizing: ${childCounterAxisSizingMode}`);
+      console.log(`  Item spacing: ${childSpacingInfo.itemSpacing}`);
+      console.log(`  Has auto gap: ${childSpacingInfo.hasAutoGap}`);
     }
   } catch (error) {
     return;
@@ -1058,15 +1325,32 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
   
   const alignmentInheritance = determineAlignmentInheritance(parentFrame, childFrame, childSpacingInfo);
   
+  // DEBUG: Log parent's original alignment properties
+  console.log(`📋 PARENT ALIGNMENT PROPERTIES (BEFORE): "${safeGetNodeName(parentFrame)}"`);
+  console.log(`  Layout mode: ${parentFrame.layoutMode}`);
+  console.log(`  Primary align: ${parentFrame.primaryAxisAlignItems}`);
+  console.log(`  Counter align: ${parentFrame.counterAxisAlignItems}`);
+  console.log(`  Primary sizing: ${parentFrame.primaryAxisSizingMode}`);
+  console.log(`  Counter sizing: ${parentFrame.counterAxisSizingMode}`);
+  console.log(`  Item spacing: ${parentFrame.itemSpacing}`);
+  
+  // DEBUG: Log inheritance decision
+  console.log(`🔄 INHERITANCE DECISION:`);
+  console.log(`  Inherit primary axis: ${alignmentInheritance.inheritPrimaryAxis}`);
+  console.log(`  Inherit counter axis: ${alignmentInheritance.inheritCounterAxis}`);
+  console.log(`  Force space between: ${alignmentInheritance.forceSpaceBetween}`);
+  
+  // Store grandchildren
   const grandchildren: SceneNode[] = [];
   try {
     if (nodeExists(childFrame) && hasChildren(childFrame)) {
       grandchildren.push(...childFrame.children.filter(child => nodeExists(child)));
     }
   } catch (error) {
-    // Skip grandchildren collection on error
+    console.warn('Error accessing grandchildren:', error);
   }
   
+  // Store visual properties for transfer
   let childStrokes: readonly Paint[] = [];
   let childEffects: readonly Effect[] = [];
   let childCornerRadius = 0;
@@ -1096,9 +1380,10 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       }
     }
   } catch (error) {
-    // Skip visual properties collection on error
+    console.warn('Error storing visual properties:', error);
   }
   
+  // Store absolute elements
   let childAbsoluteElements: SceneNode[] = [];
   let parentAbsoluteElements: SceneNode[] = [];
   
@@ -1110,10 +1395,11 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       parentAbsoluteElements = getAbsoluteChildren(parentFrame);
     }
   } catch (error) {
-    // Skip absolute elements collection on error
+    console.warn('Error accessing absolute elements:', error);
   }
   
   try {
+    // Apply layout properties BEFORE moving children
     if (childLayoutMode !== 'NONE' && nodeExists(parentFrame)) {
       parentFrame.layoutMode = childLayoutMode;
       
@@ -1133,14 +1419,25 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       if (alignmentInheritance.inheritPrimaryAxis || alignmentInheritance.forceSpaceBetween) {
         const newPrimaryAlign = alignmentInheritance.forceSpaceBetween ? 'SPACE_BETWEEN' : childSpacingInfo.primaryAxisAlignItems;
         parentFrame.primaryAxisAlignItems = newPrimaryAlign;
+        console.log(`🔄 Applied primary alignment: ${newPrimaryAlign}`);
       }
 
       if (alignmentInheritance.inheritCounterAxis) {
         parentFrame.counterAxisAlignItems = childCounterAxisAlignItems;
+        console.log(`🔄 Applied counter alignment: ${childCounterAxisAlignItems}`);
       }
       
       parentFrame.primaryAxisSizingMode = childPrimaryAxisSizingMode;
       parentFrame.counterAxisSizingMode = childCounterAxisSizingMode;
+      
+      // DEBUG: Log parent's final alignment properties
+      console.log(`📋 PARENT ALIGNMENT PROPERTIES (AFTER): "${safeGetNodeName(parentFrame)}"`);
+      console.log(`  Layout mode: ${parentFrame.layoutMode}`);
+      console.log(`  Primary align: ${parentFrame.primaryAxisAlignItems}`);
+      console.log(`  Counter align: ${parentFrame.counterAxisAlignItems}`);
+      console.log(`  Primary sizing: ${parentFrame.primaryAxisSizingMode}`);
+      console.log(`  Counter sizing: ${parentFrame.counterAxisSizingMode}`);
+      console.log(`  Item spacing: ${parentFrame.itemSpacing}`);
     }
     else if (nodeExists(parentFrame)) {
       parentFrame.paddingLeft = combinedPadding.left;
@@ -1149,13 +1446,16 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       parentFrame.paddingBottom = combinedPadding.bottom;
     }
   } catch (error) {
+    console.warn('Error applying layout properties:', error);
     return;
   }
   
+  // Apply layout sizing inheritance BEFORE moving children
   if (isFrameNode(childFrame) && nodeExists(childFrame)) {
     applyLayoutSizingInheritance(parentFrame, childFrame, grandchildren);
   }
   
+  // Move all grandchildren to parent
   grandchildren.forEach((grandchild: SceneNode): void => {
     if (!nodeExists(grandchild)) return;
     
@@ -1164,37 +1464,50 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
         parentFrame.appendChild(grandchild);
       }
     } catch (error) {
-      // Skip grandchild move on error
+      console.warn(`Error moving grandchild:`, error);
     }
   });
   
+  // Move child's absolute elements to parent with coordinate compensation
   try {
     if (nodeExists(parentFrame)) {
       childAbsoluteElements.forEach((element: SceneNode): void => {
         if (!nodeExists(element)) return;
         
+        // Compensate for parent's padding before moving
+        // Figma keeps the same x,y coordinates, but we need to adjust for parent's padding
         if ('x' in element && 'y' in element && isFrameNode(parentFrame)) {
+          console.log(`🔧 Compensating absolute element coordinates for parent padding`);
+          console.log(`  Before: x=${element.x}, y=${element.y}`);
+          console.log(`  Parent padding: left=${parentFrame.paddingLeft}, top=${parentFrame.paddingTop}`);
+          
+          // Add parent's padding to maintain visual position relative to layout content
           element.x = element.x + parentFrame.paddingLeft;
           element.y = element.y + parentFrame.paddingTop;
+          
+          console.log(`  After compensation: x=${element.x}, y=${element.y}`);
         }
         
+        // Now move to parent - Figma's automatic adjustment should result in correct position
         if (nodeExists(parentFrame)) {
           parentFrame.appendChild(element);
         }
       });
     }
   } catch (error) {
-    // Skip absolute elements move on error
+    console.warn('Error moving child absolute elements:', error);
   }
   
+  // Remove the empty child frame
   try {
     if (nodeExists(childFrame)) {
       childFrame.remove();
     }
   } catch (error) {
-    return;
+    console.warn('Error removing child frame:', error);
   }
   
+  // Restore parent's original absolute elements (maintain layer order)
   try {
     if (nodeExists(parentFrame)) {
       parentAbsoluteElements.forEach((element: SceneNode): void => {
@@ -1204,9 +1517,10 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       });
     }
   } catch (error) {
-    // Skip parent absolute elements restore on error
+    console.warn('Error restoring parent absolute elements:', error);
   }
   
+  // Restore original dimensions
   try {
     if (nodeExists(parentFrame)) {
       const currentDims = safeGetDimensions(parentFrame);
@@ -1215,9 +1529,10 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       }
     }
   } catch (error) {
-    // Skip dimension restore on error
+    console.warn('Error restoring dimensions:', error);
   }
   
+  // Transfer visual properties if dimensions matched
   if (sameDimensions && nodeExists(parentFrame)) {
     try {
       if (isStringValue(childEffectStyleId) && childEffectStyleId !== '') {
@@ -1269,7 +1584,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
         }
       }
     } catch (error) {
-      // Skip visual properties transfer on error
+      console.warn('Error transferring visual properties:', error);
     }
   } else if (nodeExists(parentFrame)) {
     if ((!('fills' in parentFrame) || !parentFrame.fills || !isArrayValue(parentFrame.fills) || parentFrame.fills.length === 0) && 
@@ -1285,7 +1600,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
           }
         }
       } catch (error) {
-        // Skip fills application on error
+        console.warn('Error applying fills:', error);
       }
     }
   }
@@ -1329,7 +1644,6 @@ function checkForIssues(node: FrameNode | GroupNode): Array<{node: string; issue
       const sameDimensions: boolean = dimensionsMatch(node, child);
       let reason = 'Cannot merge: ';
       
-      if (hasComplexFeatures(node) || hasComplexFeatures(child)) reason += 'complex features detected, ';
       if (!fillsAreCompatible(node, child, sameDimensions)) reason += 'incompatible fills, ';
       if (hasStroke(child) && !sameDimensions) reason += 'child has stroke (different dimensions), ';
       if (hasEffects(child) && !sameDimensions) reason += 'child has effects (different dimensions), ';
