@@ -360,6 +360,37 @@ function applyLayoutSizingInheritance(
   });
 }
 
+function shouldInheritAlignmentBasedOnSizing(parentSizing: string, childSizing: string): boolean {
+  // Sizing mode compatibility matrix for alignment inheritance
+  switch (parentSizing) {
+    case 'FILL':
+      switch (childSizing) {
+        case 'FILL': return true;   // Both full-space contexts
+        case 'HUG': return false;   // Child wrapper alignment won't scale to full space
+        case 'FIXED': return false; // Child fixed alignment won't scale to available space
+      }
+      break;
+      
+    case 'HUG':
+      switch (childSizing) {
+        case 'FILL': return true;  // Child fill was already constrained by parent hug
+        case 'HUG': return true;   // Similar wrapper behaviors
+        case 'FIXED': return true; // Both size-constrained contexts
+      }
+      break;
+      
+    case 'FIXED':
+      switch (childSizing) {
+        case 'FILL': return true;  // Child designed for parent's fixed space
+        case 'HUG': return false;  // Child wrapper alignment won't work in larger fixed container
+        case 'FIXED': return true; // For now, assume compatible (could add size comparison later)
+      }
+      break;
+  }
+  
+  return false; // Default conservative approach
+}
+
 function determineAlignmentInheritance(
   parentFrame: FrameNode,
   childFrame: FrameNode | GroupNode,
@@ -388,25 +419,62 @@ function determineAlignmentInheritance(
   }
   
   // CRITICAL: Check for single-child merge FIRST (highest priority)
-  // Single-child merges must preserve exact visual positioning
+  // Single-child merges need careful sizing-based alignment inheritance
   const layoutChildren = getLayoutChildren(parentFrame);
   const isSingleChildMerge = layoutChildren.length === 1;
   
   if (isSingleChildMerge) {
-    console.log(`🎯 SINGLE-CHILD MERGE: Always inheriting ALL alignment properties to preserve visual positioning`);
+    console.log(`🎯 SINGLE-CHILD MERGE: Using sizing-mode-based alignment inheritance`);
     
-    // For single-child merges with auto-gap, we still inherit counter axis
+    // Get sizing modes for both axes
+    let parentPrimarySizing: string, parentCounterSizing: string;
+    let childPrimarySizing: string, childCounterSizing: string;
+    
+    try {
+      if (parentLayoutMode === 'VERTICAL') {
+        parentPrimarySizing = parentFrame.primaryAxisSizingMode;
+        parentCounterSizing = parentFrame.counterAxisSizingMode;
+      } else {
+        parentPrimarySizing = parentFrame.primaryAxisSizingMode;
+        parentCounterSizing = parentFrame.counterAxisSizingMode;
+      }
+      
+      if (childLayoutMode === 'VERTICAL') {
+        childPrimarySizing = childFrame.layoutSizingVertical;
+        childCounterSizing = childFrame.layoutSizingHorizontal;
+      } else if (childLayoutMode === 'HORIZONTAL') {
+        childPrimarySizing = childFrame.layoutSizingHorizontal;
+        childCounterSizing = childFrame.layoutSizingVertical;
+      } else {
+        // Child has no layout mode, use conservative defaults
+        childPrimarySizing = 'FIXED';
+        childCounterSizing = 'FIXED';
+      }
+    } catch (error) {
+      // If we can't determine sizing, be conservative
+      return { inheritPrimaryAxis: false, inheritCounterAxis: false, forceSpaceBetween: false };
+    }
+    
+    // Apply sizing compatibility matrix
+    const inheritPrimaryAxis = shouldInheritAlignmentBasedOnSizing(parentPrimarySizing, childPrimarySizing);
+    const inheritCounterAxis = shouldInheritAlignmentBasedOnSizing(parentCounterSizing, childCounterSizing);
+    
+    console.log(`  Parent sizing: primary=${parentPrimarySizing}, counter=${parentCounterSizing}`);
+    console.log(`  Child sizing: primary=${childPrimarySizing}, counter=${childCounterSizing}`);
+    console.log(`  Inheritance decision: primary=${inheritPrimaryAxis}, counter=${inheritCounterAxis}`);
+    
+    // Handle auto-gap special case
     if (childSpacingInfo?.hasAutoGap) {
       return { 
-        inheritPrimaryAxis: true, 
-        inheritCounterAxis: true, // Now inherits counter axis for single-child!
+        inheritPrimaryAxis: inheritPrimaryAxis, 
+        inheritCounterAxis: inheritCounterAxis,
         forceSpaceBetween: true 
       };
     }
     
     return { 
-      inheritPrimaryAxis: true, 
-      inheritCounterAxis: true, 
+      inheritPrimaryAxis: inheritPrimaryAxis, 
+      inheritCounterAxis: inheritCounterAxis, 
       forceSpaceBetween: false 
     };
   }
@@ -431,7 +499,7 @@ function determineAlignmentInheritance(
     };
   }
   
-  // Layout mode staying same - use existing sizing-based logic (for multi-child scenarios)
+  // Layout mode staying same - use sizing-based logic (for multi-child scenarios)
   let primaryAxisSizing: string;
   let counterAxisSizing: string;
   
@@ -859,6 +927,13 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
         const childrenToMove = [...sibling.children].filter(child => nodeExists(child));
         console.log(`  📦 Moving ${childrenToMove.length} children from sibling to parent`);
         
+        // Apply sizing inheritance for layout children before moving them
+        const layoutChildrenToMove = getLayoutChildren(sibling);
+        if (layoutChildrenToMove.length > 0) {
+          console.log(`  🔧 Applying sizing inheritance for ${layoutChildrenToMove.length} layout children`);
+          applyLayoutSizingInheritance(parentFrame, sibling, layoutChildrenToMove);
+        }
+        
         // Insert children in reverse order to maintain positioning
         for (let j = childrenToMove.length - 1; j >= 0; j--) {
           const child = childrenToMove[j];
@@ -929,6 +1004,13 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
   if (hasChildren(sibling)) {
     const children = [...sibling.children].filter(child => nodeExists(child));
     console.log(`📦 Found ${children.length} children to promote`);
+    
+    // Apply sizing inheritance for layout children before moving them
+    const layoutChildren = getLayoutChildren(sibling);
+    if (layoutChildren.length > 0) {
+      console.log(`🔧 Applying sizing inheritance for ${layoutChildren.length} layout children`);
+      applyLayoutSizingInheritance(parent, sibling, layoutChildren);
+    }
     
     // Insert children in reverse order to maintain correct positioning
     // This prevents index shifting from affecting the order
