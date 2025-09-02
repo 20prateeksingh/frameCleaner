@@ -11,71 +11,81 @@
       padding: 16px;
       background: #ffffff;
       color: #000000;
+      overflow: hidden;
     }
     
+    .screen {
+      display: none;
+      animation: fadeIn 0.3s ease-in;
+    }
+    
+    .screen.active {
+      display: block;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    /* Common Elements */
     .header {
-      margin-bottom: 16px;
       text-align: center;
+      margin-bottom: 24px;
     }
     
-    .title {
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-    
-    .subtitle {
-      font-size: 11px;
-      color: #666666;
-      margin-bottom: 16px;
-    }
-    
-    .section {
-      margin-bottom: 16px;
-    }
-    
-    .section-title {
-      font-size: 11px;
-      font-weight: 500;
-      color: #333333;
-      margin-bottom: 8px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    
-    .button-group {
+    .logo {
+      width: 40px;
+      height: 40px;
+      background: #4F46E5;
+      border-radius: 8px;
       display: flex;
-      gap: 8px;
-      margin-bottom: 8px;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 20px;
+      font-weight: 700;
+      color: white;
     }
     
+    .value-prop {
+      font-size: 14px;
+      color: #333333;
+      line-height: 1.4;
+      margin-bottom: 24px;
+    }
+    
+    /* Buttons */
     .button {
-      flex: 1;
-      padding: 8px 12px;
-      border: 1px solid #e5e5e5;
-      border-radius: 6px;
-      background: #ffffff;
-      color: #000000;
-      font-size: 11px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s ease;
-    }
-    
-    .button:hover {
-      background: #f5f5f5;
-      border-color: #d4d4d4;
+      text-align: center;
+      border: none;
+      width: 100%;
+      margin-bottom: 8px;
     }
     
     .button.primary {
       background: #4F46E5;
       color: #ffffff;
-      border-color: #4F46E5;
     }
     
-    .button.primary:hover {
+    .button.primary:hover:not(:disabled) {
       background: #4338CA;
-      border-color: #4338CA;
+    }
+    
+    .button.secondary {
+      background: #ffffff;
+      color: #4F46E5;
+      border: 2px solid #4F46E5;
+    }
+    
+    .button.secondary:hover:not(:disabled) {
+      background: #f8fafc;
     }
     
     .button:disabled {
@@ -85,123 +95,466 @@
       cursor: not-allowed;
     }
     
-    .results {
+    .button-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    
+    /* Ready Screen */
+    .helper-text {
+      font-size: 11px;
+      color: #666666;
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    
+    .tertiary-links {
+      text-align: center;
+      margin-top: 32px;
+    }
+    
+    .link {
+      color: #4F46E5;
+      text-decoration: none;
+      font-size: 11px;
+      display: block;
+      margin-bottom: 12px;
+      cursor: pointer;
+    }
+    
+    .link:hover {
+      text-decoration: underline;
+    }
+    
+    /* Analysis Screen */
+    .back-button {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      color: #666666;
+      padding: 4px;
+    }
+    
+    .back-button:hover {
+      color: #333333;
+    }
+    
+    .analysis-summary {
       background: #f8fafc;
       border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      padding: 12px;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    
+    .section-title {
       font-size: 11px;
-      line-height: 1.4;
-      margin-top: 12px;
-    }
-    
-    .results.hidden {
-      display: none;
-    }
-    
-    .results-title {
       font-weight: 600;
+      color: #334155;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .slider-container {
+      margin-bottom: 16px;
+    }
+    
+    .slider-label {
+      font-size: 11px;
+      color: #475569;
       margin-bottom: 8px;
+    }
+    
+    .slider-track {
+      width: 100%;
+      height: 8px;
+      background: linear-gradient(to right, #10b981 0%, #f59e0b 50%, #ef4444 100%);
+      border-radius: 4px;
+      position: relative;
+      margin-bottom: 8px;
+    }
+    
+    .slider-thumb {
+      width: 16px;
+      height: 16px;
+      background: #ffffff;
+      border: 2px solid #333333;
+      border-radius: 50%;
+      position: absolute;
+      top: -4px;
+      transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .slider-status {
+      font-size: 11px;
+      font-weight: 500;
       color: #334155;
     }
     
-    .results-item {
-      margin-bottom: 4px;
-      color: #475569;
-    }
-    
-    .results-success {
-      background: #f0fdf4;
-      border-color: #bbf7d0;
-      color: #166534;
-    }
-    
-    .status {
-      text-align: center;
-      font-size: 11px;
-      color: #666666;
-      margin-top: 12px;
-      padding: 8px;
-      background: #f8fafc;
-      border-radius: 4px;
-    }
-    
-    .limitations {
-      background: #fffbeb;
-      border: 1px solid #fed7aa;
-      border-radius: 6px;
-      padding: 12px;
+    .layer-info {
       margin-top: 16px;
     }
     
-    .limitations-title {
-      font-weight: 600;
-      margin-bottom: 6px;
-      color: #92400e;
+    .layer-stat {
       font-size: 11px;
+      color: #475569;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
     
-    .limitations-text {
-      font-size: 10px;
-      color: #a16207;
-      line-height: 1.3;
+    .expandable-trigger {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 11px;
+      color: #4F46E5;
+      padding: 0;
+    }
+    
+    .removable-list {
+      max-height: 120px;
+      overflow-y: auto;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      margin-top: 8px;
+    }
+    
+    .removable-item {
+      padding: 8px 12px;
+      font-size: 11px;
+      color: #334155;
+      border-bottom: 1px solid #f1f5f9;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    
+    .removable-item:last-child {
+      border-bottom: none;
+    }
+    
+    .removable-item:hover {
+      background: #f8fafc;
+    }
+    
+    .removable-item::before {
+      content: "•";
+      color: #4F46E5;
+      margin-right: 8px;
+    }
+    
+    /* Results Screen */
+    .celebration {
+      text-align: center;
+      margin: 32px 0;
+    }
+    
+    .frames-removed {
+      font-size: 24px;
+      font-weight: 700;
+      color: #059669;
+      margin-bottom: 8px;
+    }
+    
+    .celebration-text {
+      font-size: 12px;
+      color: #334155;
+    }
+    
+    .results-slider {
+      margin: 32px 0;
+    }
+    
+    /* Fully Optimized */
+    .optimized-message {
+      text-align: center;
+      font-size: 14px;
+      color: #059669;
+      margin: 24px 0;
+      font-weight: 500;
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="title">Frame Cleaner</div>
-    <div class="subtitle">Intelligent auto-layout optimization</div>
-  </div>
+  <!-- Ready Screen -->
+  <div id="ready-screen" class="screen active">
+    <div class="header">
+      <div class="logo">F</div>
+      <div class="value-prop">Intelligent auto-layout optimization</div>
+    </div>
 
-  <div class="section">
-    <div class="section-title">Analysis</div>
     <div class="button-group">
-      <button id="analyze-selection" class="button">Analyze Selection</button>
-      <button id="analyze-page" class="button">Analyze Page</button>
+      <button id="analyze-btn" class="button primary" disabled>Analyse</button>
+      <button id="quick-clean-btn" class="button secondary" disabled>Quick Clean</button>
+    </div>
+
+    <div class="helper-text">Select a Frame to get started</div>
+
+    <div class="tertiary-links">
+      <a href="#" class="link" id="learn-more">Know more</a>
+      <a href="#" class="link" id="report-bug">Found a bug? Report</a>
     </div>
   </div>
 
-  <div class="section">
-    <div class="section-title">Optimization</div>
-    <div class="button-group">
-      <button id="clean-selection" class="button primary">Clean Selection</button>
-      <button id="clean-page" class="button primary">Clean Page</button>
+  <!-- Analysis Screen -->
+  <div id="analysis-screen" class="screen">
+    <button class="back-button" id="back-btn">←</button>
+    
+    <div class="header">
+      <div class="logo">F</div>
+    </div>
+
+    <div class="analysis-summary">
+      <div class="section-title">Analysis Summary</div>
+      
+      <div class="slider-container">
+        <div class="slider-label">Layer Structure</div>
+        <div class="slider-track">
+          <div class="slider-thumb" id="analysis-thumb"></div>
+        </div>
+        <div class="slider-status" id="slider-status">Well optimized</div>
+      </div>
+
+      <button id="optimize-btn" class="button primary">Optimize</button>
+
+      <div class="layer-info">
+        <div class="layer-stat">
+          <span>Total Layers: <span id="total-layers">0</span></span>
+        </div>
+        <div class="layer-stat" id="removable-section">
+          <span>Removable Layers: <span id="removable-count">0</span></span>
+          <button class="expandable-trigger" id="expand-toggle">⌄</button>
+        </div>
+        <div id="removable-list" class="removable-list" style="display: none;"></div>
+      </div>
     </div>
   </div>
 
-  <div id="results" class="results hidden">
-    <div id="results-content"></div>
-  </div>
-
-  <div id="status" class="status">
-    <span id="status-text">Select frames to get started</span>
-  </div>
-
-  <div class="limitations">
-    <div class="limitations-title">V1 Safety Limitations</div>
-    <div class="limitations-text">
-      Blocks optimization for frames with: rotation/transforms, gradients, images, 
-      prototype interactions, wrap mode, baseline alignment, or clipsContent masking.
+  <!-- Results Screen -->
+  <div id="results-screen" class="screen">
+    <div class="header">
+      <div class="logo">F</div>
     </div>
+
+    <div class="celebration">
+      <div class="frames-removed" id="frames-removed-count">12 frames removed</div>
+    </div>
+
+    <div class="results-slider">
+      <div class="slider-label">Layer Structure</div>
+      <div class="slider-track">
+        <div class="slider-thumb" id="results-thumb"></div>
+      </div>
+      <div class="slider-status">Well optimized</div>
+    </div>
+
+    <button id="done-btn" class="button primary">Done</button>
   </div>
 
   <script>
-    // Button event listeners
-    document.getElementById('analyze-selection').addEventListener('click', () => {
+    // State management
+    let currentScreen = 'ready';
+    let analysisData = null;
+    let hasSelection = false;
+
+    // Screen management
+    function showScreen(screenId) {
+      document.querySelectorAll('.screen').forEach(screen => {
+        screen.classList.remove('active');
+      });
+      document.getElementById(screenId + '-screen').classList.add('active');
+      currentScreen = screenId;
+    }
+
+    // Calculate slider position (0-100%)
+    function calculateSliderPosition(percentage) {
+      return Math.min(100, Math.max(0, percentage * 100));
+    }
+
+    // Update slider visual state
+    function updateSlider(thumbElement, percentage) {
+      const position = calculateSliderPosition(percentage);
+      thumbElement.style.left = `calc(${position}% - 8px)`;
+    }
+
+    // Get status text based on percentage
+    function getStatusText(percentage) {
+      if (percentage <= 0.1) return 'Well optimized';
+      return 'Optimization needed';
+    }
+
+    // Update selection state
+    function updateSelectionState(hasSelection, count) {
+      const analyzeBtn = document.getElementById('analyze-btn');
+      const quickCleanBtn = document.getElementById('quick-clean-btn');
+      const helperText = document.querySelector('.helper-text');
+      
+      if (hasSelection) {
+        analyzeBtn.disabled = false;
+        quickCleanBtn.disabled = false;
+        helperText.textContent = `${count} frame${count !== 1 ? 's' : ''} selected`;
+      } else {
+        analyzeBtn.disabled = true;
+        quickCleanBtn.disabled = true;
+        helperText.textContent = 'Select a Frame to get started';
+      }
+    }
+
+    // Show analysis results
+    function showAnalysisResults(results) {
+      analysisData = results;
+      
+      if (results.removableFrames === 0) {
+        showFullyOptimizedAnalysis(results);
+      } else {
+        showNormalAnalysis(results);
+      }
+      
+      showScreen('analysis');
+    }
+
+    function showNormalAnalysis(results) {
+      const percentage = results.removableFrames / results.totalFrames;
+      
+      // Update slider
+      const thumb = document.getElementById('analysis-thumb');
+      updateSlider(thumb, percentage);
+      
+      // Update status
+      document.getElementById('slider-status').textContent = getStatusText(percentage);
+      
+      // Update layer counts
+      document.getElementById('total-layers').textContent = results.totalFrames;
+      document.getElementById('removable-count').textContent = results.removableFrames;
+      
+      // Show removable section
+      document.getElementById('removable-section').style.display = 'flex';
+      
+      // Populate removable list
+      const list = document.getElementById('removable-list');
+      list.innerHTML = '';
+      results.removableFrameNames.forEach(name => {
+        const item = document.createElement('div');
+        item.className = 'removable-item';
+        item.textContent = name;
+        list.appendChild(item);
+      });
+      
+      // Update optimize button
+      document.getElementById('optimize-btn').textContent = 'Optimize';
+    }
+
+    function showFullyOptimizedAnalysis(results) {
+      const thumb = document.getElementById('analysis-thumb');
+      updateSlider(thumb, 0);
+      
+      document.getElementById('slider-status').textContent = 'Well optimized';
+      document.getElementById('total-layers').textContent = results.totalFrames;
+      
+      // Hide removable section
+      document.getElementById('removable-section').style.display = 'none';
+      
+      // Add optimized message
+      const layerInfo = document.querySelector('.layer-info');
+      if (!document.querySelector('.optimized-message')) {
+        const message = document.createElement('div');
+        message.className = 'optimized-message';
+        message.textContent = 'Your layers are fully optimized!';
+        layerInfo.appendChild(message);
+      }
+      
+      // Update button
+      document.getElementById('optimize-btn').textContent = 'Done';
+    }
+
+    // Show cleaning results
+    function showCleaningResults(results) {
+      if (results.message) {
+        // Handle error case
+        alert(results.message);
+        return;
+      }
+
+      const framesRemoved = results.siblingsRemoved;
+      document.getElementById('frames-removed-count').textContent = 
+        `${framesRemoved} frame${framesRemoved !== 1 ? 's' : ''} removed`;
+      
+      // Animate slider to green
+      const resultsThumb = document.getElementById('results-thumb');
+      // Start from previous position if we have analysis data
+      if (analysisData) {
+        const startPercentage = analysisData.removableFrames / analysisData.totalFrames;
+        updateSlider(resultsThumb, startPercentage);
+        
+        // Animate to green after a brief delay
+        setTimeout(() => {
+          updateSlider(resultsThumb, 0);
+        }, 500);
+      } else {
+        updateSlider(resultsThumb, 0);
+      }
+      
+      showScreen('results');
+    }
+
+    // Event listeners
+    document.getElementById('analyze-btn').addEventListener('click', () => {
       parent.postMessage({ pluginMessage: { type: 'analyze-selection' } }, '*');
     });
 
-    document.getElementById('analyze-page').addEventListener('click', () => {
-      parent.postMessage({ pluginMessage: { type: 'analyze-page' } }, '*');
-    });
-
-    document.getElementById('clean-selection').addEventListener('click', () => {
+    document.getElementById('quick-clean-btn').addEventListener('click', () => {
       parent.postMessage({ pluginMessage: { type: 'clean-selection' } }, '*');
     });
 
-    document.getElementById('clean-page').addEventListener('click', () => {
-      parent.postMessage({ pluginMessage: { type: 'clean-page' } }, '*');
+    document.getElementById('optimize-btn').addEventListener('click', () => {
+      if (analysisData && analysisData.removableFrames === 0) {
+        // Fully optimized, go back to ready
+        showScreen('ready');
+      } else {
+        // Run optimization
+        parent.postMessage({ pluginMessage: { type: 'clean-selection' } }, '*');
+      }
+    });
+
+    document.getElementById('back-btn').addEventListener('click', () => {
+      showScreen('ready');
+    });
+
+    document.getElementById('done-btn').addEventListener('click', () => {
+      showScreen('ready');
+    });
+
+    document.getElementById('expand-toggle').addEventListener('click', () => {
+      const list = document.getElementById('removable-list');
+      const toggle = document.getElementById('expand-toggle');
+      
+      if (list.style.display === 'none') {
+        list.style.display = 'block';
+        toggle.textContent = '⌃';
+      } else {
+        list.style.display = 'none';
+        toggle.textContent = '⌄';
+      }
+    });
+
+    // Placeholder for tertiary links
+    document.getElementById('learn-more').addEventListener('click', (e) => {
+      e.preventDefault();
+      alert('Learn more functionality coming soon!');
+    });
+
+    document.getElementById('report-bug').addEventListener('click', (e) => {
+      e.preventDefault();
+      alert('Bug reporting functionality coming soon!');
     });
 
     // Message handler from plugin
@@ -209,7 +562,8 @@
       const message = event.data.pluginMessage;
       
       if (message.type === 'selection-changed') {
-        updateSelectionStatus(message.hasSelection, message.selectionCount);
+        hasSelection = message.hasSelection;
+        updateSelectionState(message.hasSelection, message.selectionCount);
       } else if (message.type === 'analysis-result') {
         showAnalysisResults(message.results);
       } else if (message.type === 'cleaning-result') {
@@ -217,67 +571,8 @@
       }
     };
 
-    function updateSelectionStatus(hasSelection, count) {
-      const statusText = document.getElementById('status-text');
-      const analyzeSelectionBtn = document.getElementById('analyze-selection');
-      const cleanSelectionBtn = document.getElementById('clean-selection');
-      
-      if (hasSelection) {
-        statusText.textContent = `${count} frame${count !== 1 ? 's' : ''} selected`;
-        analyzeSelectionBtn.disabled = false;
-        cleanSelectionBtn.disabled = false;
-      } else {
-        statusText.textContent = 'Select frames to get started';
-        analyzeSelectionBtn.disabled = true;
-        cleanSelectionBtn.disabled = true;
-      }
-    }
-
-    function showAnalysisResults(results) {
-      const resultsDiv = document.getElementById('results');
-      const resultsContent = document.getElementById('results-content');
-      
-      if (!results) {
-        resultsDiv.className = 'results hidden';
-        return;
-      }
-      
-      resultsDiv.className = 'results';
-      resultsContent.innerHTML = `
-        <div class="results-title">Analysis Results</div>
-        <div class="results-item">Total Frames: ${results.totalFrames}</div>
-        <div class="results-item">Mergeable: ${results.mergeableFrames}</div>
-        <div class="results-item">Optimizable Sibling Groups: ${results.optimizableSiblingGroups}</div>
-        <div class="results-item">Padding Optimizations: ${results.paddingOptimizations}</div>
-        ${results.issues.length > 0 ? `<div class="results-item">Issues Found: ${results.issues.length}</div>` : ''}
-      `;
-    }
-
-    function showCleaningResults(results) {
-      const resultsDiv = document.getElementById('results');
-      const resultsContent = document.getElementById('results-content');
-      
-      if (results.message) {
-        resultsDiv.className = 'results';
-        resultsContent.innerHTML = `<div class="results-title">${results.message}</div>`;
-        return;
-      }
-      
-      const totalOptimized = results.framesMerged + results.siblingGroupsOptimized;
-      
-      resultsDiv.className = 'results results-success';
-      resultsContent.innerHTML = `
-        <div class="results-title">Optimization Complete! ✅</div>
-        <div class="results-item">Frames Analyzed: ${results.framesAnalyzed}</div>
-        <div class="results-item">Parent-Child Merges: ${results.framesMerged}</div>
-        <div class="results-item">Sibling Groups Optimized: ${results.siblingGroupsOptimized}</div>
-        <div class="results-item">Total Frames Removed: ${results.siblingsRemoved}</div>
-        <div class="results-item"><strong>Total Optimized: ${totalOptimized} structures</strong></div>
-      `;
-    }
-
-    // Initialize button states
-    updateSelectionStatus(false, 0);
+    // Initialize
+    updateSelectionState(false, 0);
   </script>
 </body>
 </html>

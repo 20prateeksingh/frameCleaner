@@ -1,8 +1,9 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Complete TypeScript with Enhanced Selective Sibling Optimization
+// Frame Cleaner Plugin - Complete TypeScript with Enhanced Critical Safety Checks
 // Optimizes auto-layout structures by merging unnecessary nested frames and selectively dissolving compatible siblings
 // Features: Layout sizing inheritance, selective sibling dissolution with full→partial hierarchy, cross-direction padding validation
+// V1 ENHANCED: Critical safety checks for transforms, gradients, images, prototype interactions, wrap mode, baseline alignment
 
 // Type definitions
 interface CleaningResults {
@@ -22,6 +23,8 @@ interface AnalysisResults {
   mergeableFrames: number;
   optimizableSiblingGroups: number;
   paddingOptimizations: number;
+  removableFrames: number;
+  removableFrameNames: string[];
   issues: Array<{
     node: string;
     issue: string;
@@ -81,6 +84,161 @@ function isNumberValue(value: number | symbol): value is number {
 
 function isStringValue(value: string | symbol): value is string {
   return typeof value === 'string';
+}
+
+// PHASE 1 CRITICAL SAFETY CHECKS - NEW FUNCTIONS
+
+function hasTransformOrRotation(node: FrameNode | GroupNode): boolean {
+  try {
+    if (!nodeExists(node)) return false;
+    
+    // Check for rotation
+    if ('rotation' in node && isNumberValue(node.rotation) && Math.abs(node.rotation) > 0.001) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has rotation: ${node.rotation}`);
+      return true;
+    }
+    
+    // Check for skew transforms - handle unknown type properly
+    if ('skewX' in node && typeof node.skewX === 'number' && Math.abs(node.skewX) > 0.001) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has skewX: ${node.skewX}`);
+      return true;
+    }
+    
+    if ('skewY' in node && typeof node.skewY === 'number' && Math.abs(node.skewY) > 0.001) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has skewY: ${node.skewY}`);
+      return true;
+    }
+    
+    // Check for transform matrix modifications (if relativeTransform is not identity)
+    if ('relativeTransform' in node && Array.isArray(node.relativeTransform)) {
+      const transform = node.relativeTransform;
+      // Identity matrix: [[1,0,x], [0,1,y]]
+      const isIdentity = transform.length === 2 &&
+                        Math.abs(transform[0][0] - 1) < 0.001 &&
+                        Math.abs(transform[0][1]) < 0.001 &&
+                        Math.abs(transform[1][0]) < 0.001 &&
+                        Math.abs(transform[1][1] - 1) < 0.001;
+      
+      if (!isIdentity) {
+        console.log(`❌ Node "${safeGetNodeName(node)}" has non-identity transform matrix`);
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.warn(`Error checking transforms for node:`, error);
+    return true; // Conservative approach - block if we can't check
+  }
+}
+
+function hasComplexFills(node: FrameNode | GroupNode): boolean {
+  try {
+    if (!nodeExists(node) || !('fills' in node)) return false;
+    
+    const fills = node.fills;
+    if (!isArrayValue(fills) || fills.length === 0) return false;
+    
+    for (const fill of fills) {
+      if (!fill.visible) continue; // Skip invisible fills
+      
+      // Check for gradients
+      if (fill.type === 'GRADIENT_LINEAR' || 
+          fill.type === 'GRADIENT_RADIAL' || 
+          fill.type === 'GRADIENT_ANGULAR' || 
+          fill.type === 'GRADIENT_DIAMOND') {
+        console.log(`❌ Node "${safeGetNodeName(node)}" has gradient fill: ${fill.type}`);
+        return true;
+      }
+      
+      // Check for images/videos
+      if (fill.type === 'IMAGE' || fill.type === 'VIDEO') {
+        console.log(`❌ Node "${safeGetNodeName(node)}" has image/video fill: ${fill.type}`);
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.warn(`Error checking fills for node:`, error);
+    return true; // Conservative approach
+  }
+}
+
+function hasComplexStrokes(node: FrameNode | GroupNode): boolean {
+  try {
+    if (!nodeExists(node) || !('strokes' in node)) return false;
+    
+    const strokes = node.strokes;
+    if (!isArrayValue(strokes) || strokes.length === 0) return false;
+    
+    for (const stroke of strokes) {
+      if (!stroke.visible) continue; // Skip invisible strokes
+      
+      // Check for non-solid strokes (gradients, images)
+      if (stroke.type !== 'SOLID') {
+        console.log(`❌ Node "${safeGetNodeName(node)}" has complex stroke: ${stroke.type}`);
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.warn(`Error checking strokes for node:`, error);
+    return true; // Conservative approach
+  }
+}
+
+function hasPrototypeInteractions(node: FrameNode | GroupNode): boolean {
+  try {
+    if (!nodeExists(node)) return false;
+    
+    // Check for reactions (prototype interactions)
+    if ('reactions' in node && isArrayValue(node.reactions) && node.reactions.length > 0) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has ${node.reactions.length} prototype reactions`);
+      return true;
+    }
+    
+    // Check for flow starting points - handle unknown type properly
+    if ('flowStartingPoints' in node && Array.isArray(node.flowStartingPoints) && node.flowStartingPoints.length > 0) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has ${node.flowStartingPoints.length} flow starting points`);
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.warn(`Error checking prototype interactions for node:`, error);
+    return true; // Conservative approach
+  }
+}
+
+function hasAdvancedLayoutModes(node: FrameNode | GroupNode): boolean {
+  try {
+    if (!nodeExists(node) || !isFrameNode(node)) return false;
+    
+    // Check for wrap mode
+    if ('layoutWrap' in node && node.layoutWrap === 'WRAP') {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has wrap mode enabled`);
+      return true;
+    }
+    
+    // Check for baseline alignment
+    if (hasAutoLayout(node) && node.counterAxisAlignItems === 'BASELINE') {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has baseline alignment`);
+      return true;
+    }
+    
+    // Check for grid layout mode (should be blocked anyway, but explicit check)
+    if (node.layoutMode === 'GRID') {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has grid layout mode`);
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.warn(`Error checking advanced layout modes for node:`, error);
+    return true; // Conservative approach
+  }
 }
 
 function getChildSpacingInfo(childFrame: FrameNode): {
@@ -477,7 +635,7 @@ function shouldInheritAlignment(parentSizing: string, childSizing: string, axis:
 }
 
 // Initialize plugin
-figma.showUI(__html__, { width: 350, height: 300 });
+figma.showUI(__html__, { width: 350, height: 450 });
 
 let cleaningResults: CleaningResults = {
   framesAnalyzed: 0,
@@ -755,6 +913,41 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode,
     console.log('❌ Empty sibling');
     return false;
   }
+  
+  // PHASE 1 CRITICAL SAFETY CHECKS - NEW ENHANCED CHECKS
+  console.log(`🔒 PHASE 1 CRITICAL SAFETY CHECKS:`);
+  
+  // Check for transforms/rotation
+  if (hasTransformOrRotation(sibling)) {
+    console.log('❌ CRITICAL: Sibling has transforms/rotation that would be lost');
+    return false;
+  }
+  
+  // Check for complex fills (gradients, images)
+  if (hasComplexFills(sibling)) {
+    console.log('❌ CRITICAL: Sibling has gradients/images that would be lost');
+    return false;
+  }
+  
+  // Check for complex strokes
+  if (hasComplexStrokes(sibling)) {
+    console.log('❌ CRITICAL: Sibling has complex strokes that would be lost');
+    return false;
+  }
+  
+  // Check for prototype interactions
+  if (hasPrototypeInteractions(sibling)) {
+    console.log('❌ CRITICAL: Sibling has prototype interactions that would be lost');
+    return false;
+  }
+  
+  // Check for advanced layout modes
+  if (hasAdvancedLayoutModes(sibling)) {
+    console.log('❌ CRITICAL: Sibling has advanced layout modes (wrap/baseline/grid)');
+    return false;
+  }
+  
+  console.log(`✅ PHASE 1 CRITICAL CHECKS PASSED`);
   
   // V1 LIMITATION: Block dissolution if sibling contains absolute children (complex coordinate math)
   const absoluteChildren = getAbsoluteChildren(sibling);
@@ -1332,6 +1525,8 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
     mergeableFrames: 0,
     optimizableSiblingGroups: 0,
     paddingOptimizations: 0,
+    removableFrames: 0,
+    removableFrameNames: [],
     issues: []
   };
   
@@ -1339,8 +1534,11 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
     if (isFrameOrGroup(node)) {
       results.totalFrames++;
       
+      // Check if this frame can be merged with its single child
       if (canBeMerged(node)) {
         results.mergeableFrames++;
+        results.removableFrames++;
+        results.removableFrameNames.push(safeGetNodeName(node));
       }
       
       // Check for optimizable siblings (enhanced approach: full vs partial)
@@ -1351,18 +1549,24 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
         // Check for full dissolution potential
         if (canAllSiblingsBeDissolvedTogether(node)) {
           results.optimizableSiblingGroups++;
+          // Add all siblings to removable list for full dissolution
+          siblingFrames.forEach(sibling => {
+            results.removableFrames++;
+            results.removableFrameNames.push(safeGetNodeName(sibling));
+          });
         } else {
           // Check for partial dissolution potential (padding:0 only)
           let hasPartialOptimization = false;
           siblingFrames.forEach(sibling => {
             if (canSiblingBeDissolvedSelectively(sibling, node, true)) {
-              hasPartialOptimization = true;
+              if (!hasPartialOptimization) {
+                results.optimizableSiblingGroups++;
+                hasPartialOptimization = true;
+              }
+              results.removableFrames++;
+              results.removableFrameNames.push(safeGetNodeName(sibling));
             }
           });
-          
-          if (hasPartialOptimization) {
-            results.optimizableSiblingGroups++;
-          }
         }
       }
       
@@ -1444,8 +1648,13 @@ function cleanFrames(nodes: readonly SceneNode[]): void {
     results: cleaningResults
   });
   
-  const totalOptimized = cleaningResults.framesMerged + cleaningResults.siblingGroupsOptimized;
-  figma.notify(`Optimized ${totalOptimized} structures (${cleaningResults.framesMerged} merged, ${cleaningResults.siblingGroupsOptimized} sibling groups optimized, ${cleaningResults.siblingsRemoved} frames removed)`);
+  const totalFramesRemoved = cleaningResults.framesMerged + cleaningResults.siblingsRemoved;
+  
+  if (totalFramesRemoved === 0) {
+    figma.notify("Your layers are fully optimized!");
+  } else {
+    figma.notify(`${totalFramesRemoved} frame${totalFramesRemoved !== 1 ? 's' : ''} removed`);
+  }
 }
 
 // Core logic functions
@@ -1463,11 +1672,76 @@ function canBeMerged(node: FrameNode | GroupNode): boolean {
 }
 
 function canSafelyMerge(parent: FrameNode | GroupNode, child: FrameNode | GroupNode): boolean {
+  console.log(`\n🔍 MERGE SAFETY CHECK: "${safeGetNodeName(parent)}" + "${safeGetNodeName(child)}"`);
+  
   const sameDimensions: boolean = dimensionsMatch(parent, child);
   
-  if (isGroupNode(parent) || isGroupNode(child)) return false;
+  if (isGroupNode(parent) || isGroupNode(child)) {
+    console.log('❌ Group nodes not supported for merging');
+    return false;
+  }
   
-  if (!hasAutoLayout(parent) || !hasAutoLayout(child)) return false;
+  if (!hasAutoLayout(parent) || !hasAutoLayout(child)) {
+    console.log('❌ Both parent and child must have auto-layout');
+    return false;
+  }
+  
+  // PHASE 1 CRITICAL SAFETY CHECKS - NEW ENHANCED CHECKS FOR PARENT-CHILD MERGING
+  console.log(`🔒 PHASE 1 CRITICAL SAFETY CHECKS FOR MERGING:`);
+  
+  // Check parent for critical properties
+  if (hasTransformOrRotation(parent)) {
+    console.log('❌ CRITICAL: Parent has transforms/rotation that would be lost');
+    return false;
+  }
+  
+  if (hasComplexFills(parent)) {
+    console.log('❌ CRITICAL: Parent has gradients/images that would be lost');
+    return false;
+  }
+  
+  if (hasComplexStrokes(parent)) {
+    console.log('❌ CRITICAL: Parent has complex strokes that would be lost');
+    return false;
+  }
+  
+  if (hasPrototypeInteractions(parent)) {
+    console.log('❌ CRITICAL: Parent has prototype interactions that would be lost');
+    return false;
+  }
+  
+  if (hasAdvancedLayoutModes(parent)) {
+    console.log('❌ CRITICAL: Parent has advanced layout modes (wrap/baseline/grid)');
+    return false;
+  }
+  
+  // Check child for critical properties
+  if (hasTransformOrRotation(child)) {
+    console.log('❌ CRITICAL: Child has transforms/rotation that would be lost');
+    return false;
+  }
+  
+  if (hasComplexFills(child)) {
+    console.log('❌ CRITICAL: Child has gradients/images that would be lost');
+    return false;
+  }
+  
+  if (hasComplexStrokes(child)) {
+    console.log('❌ CRITICAL: Child has complex strokes that would be lost');
+    return false;
+  }
+  
+  if (hasPrototypeInteractions(child)) {
+    console.log('❌ CRITICAL: Child has prototype interactions that would be lost');
+    return false;
+  }
+  
+  if (hasAdvancedLayoutModes(child)) {
+    console.log('❌ CRITICAL: Child has advanced layout modes (wrap/baseline/grid)');
+    return false;
+  }
+  
+  console.log(`✅ PHASE 1 CRITICAL CHECKS PASSED FOR MERGING`);
   
   // PHASE 3: Child FIXED Sizing Handling
   // Block child FIXED sizing when there are conflicts
@@ -1504,13 +1778,29 @@ function canSafelyMerge(parent: FrameNode | GroupNode, child: FrameNode | GroupN
     }
   }
   
-  if (!fillsAreCompatible(parent, child, sameDimensions)) return false;
+  if (!fillsAreCompatible(parent, child, sameDimensions)) {
+    console.log('❌ Incompatible fills');
+    return false;
+  }
   
-  if (hasStroke(child) && !sameDimensions) return false;
-  if (hasEffects(child) && !sameDimensions) return false;
-  if (hasCornerRadius(child) && !sameDimensions) return false;
-  if (child.opacity !== 1) return false;
+  if (hasStroke(child) && !sameDimensions) {
+    console.log('❌ Child has strokes with different dimensions');
+    return false;
+  }
+  if (hasEffects(child) && !sameDimensions) {
+    console.log('❌ Child has effects with different dimensions');
+    return false;
+  }
+  if (hasCornerRadius(child) && !sameDimensions) {
+    console.log('❌ Child has corner radius with different dimensions');
+    return false;
+  }
+  if (child.opacity !== 1) {
+    console.log('❌ Child has opacity ≠ 1');
+    return false;
+  }
   
+  console.log('✅ Merge safety check passed');
   return true;
 }
 
@@ -2034,6 +2324,13 @@ function checkForIssues(node: FrameNode | GroupNode): Array<{node: string; issue
     if (!canSafelyMerge(node, child)) {
       const sameDimensions: boolean = dimensionsMatch(node, child);
       let reason = 'Cannot merge: ';
+      
+      // PHASE 1 CRITICAL SAFETY CHECKS - Add critical safety issues to report
+      if (hasTransformOrRotation(node) || hasTransformOrRotation(child)) reason += 'transforms/rotation detected, ';
+      if (hasComplexFills(node) || hasComplexFills(child)) reason += 'gradients/images detected, ';
+      if (hasComplexStrokes(node) || hasComplexStrokes(child)) reason += 'complex strokes detected, ';
+      if (hasPrototypeInteractions(node) || hasPrototypeInteractions(child)) reason += 'prototype interactions detected, ';
+      if (hasAdvancedLayoutModes(node) || hasAdvancedLayoutModes(child)) reason += 'advanced layout modes detected, ';
       
       if (!fillsAreCompatible(node, child, sameDimensions)) reason += 'incompatible fills, ';
       if (hasStroke(child) && !sameDimensions) reason += 'child has stroke (different dimensions), ';
