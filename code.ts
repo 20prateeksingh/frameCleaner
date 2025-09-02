@@ -565,7 +565,145 @@ function dimensionsMatch(parent: FrameNode | GroupNode, child: FrameNode | Group
   }
 }
 
-// ===== ENHANCED SELECTIVE SIBLING OPTIMIZATION FUNCTIONS =====
+// Helper functions for sibling dissolution compatibility
+
+function siblingsHaveIdenticalAlignment(siblings: FrameNode[]): boolean {
+  if (siblings.length <= 1) return true;
+  
+  const firstSibling = siblings[0];
+  if (!hasAutoLayout(firstSibling)) return false;
+  
+  const referenceAlignment = {
+    primary: firstSibling.primaryAxisAlignItems,
+    counter: firstSibling.counterAxisAlignItems
+  };
+  
+  console.log(`🔍 ALIGNMENT HARMONY CHECK: Reference alignment from "${safeGetNodeName(firstSibling)}"`);
+  console.log(`  Primary: ${referenceAlignment.primary}, Counter: ${referenceAlignment.counter}`);
+  
+  for (let i = 1; i < siblings.length; i++) {
+    const sibling = siblings[i];
+    if (!hasAutoLayout(sibling)) {
+      console.log(`❌ Sibling "${safeGetNodeName(sibling)}" lacks auto-layout`);
+      return false;
+    }
+    
+    const siblingAlignment = {
+      primary: sibling.primaryAxisAlignItems,
+      counter: sibling.counterAxisAlignItems
+    };
+    
+    console.log(`  Checking "${safeGetNodeName(sibling)}": Primary: ${siblingAlignment.primary}, Counter: ${siblingAlignment.counter}`);
+    
+    if (siblingAlignment.primary !== referenceAlignment.primary || 
+        siblingAlignment.counter !== referenceAlignment.counter) {
+      console.log(`❌ Alignment mismatch: Expected (${referenceAlignment.primary}, ${referenceAlignment.counter}), got (${siblingAlignment.primary}, ${siblingAlignment.counter})`);
+      return false;
+    }
+  }
+  
+  console.log(`✅ All siblings have identical alignment`);
+  return true;
+}
+
+function siblingsHaveIdenticalSizing(siblings: FrameNode[]): boolean {
+  if (siblings.length <= 1) return true;
+  
+  const firstSibling = siblings[0];
+  if (!hasAutoLayout(firstSibling)) return false;
+  
+  const referenceSizing = {
+    horizontal: firstSibling.layoutSizingHorizontal,
+    vertical: firstSibling.layoutSizingVertical
+  };
+  
+  console.log(`🔍 SIZING HARMONY CHECK: Reference sizing from "${safeGetNodeName(firstSibling)}"`);
+  console.log(`  Horizontal: ${referenceSizing.horizontal}, Vertical: ${referenceSizing.vertical}`);
+  
+  for (let i = 1; i < siblings.length; i++) {
+    const sibling = siblings[i];
+    if (!hasAutoLayout(sibling)) {
+      console.log(`❌ Sibling "${safeGetNodeName(sibling)}" lacks auto-layout`);
+      return false;
+    }
+    
+    const siblingSizing = {
+      horizontal: sibling.layoutSizingHorizontal,
+      vertical: sibling.layoutSizingVertical
+    };
+    
+    console.log(`  Checking "${safeGetNodeName(sibling)}": Horizontal: ${siblingSizing.horizontal}, Vertical: ${siblingSizing.vertical}`);
+    
+    if (siblingSizing.horizontal !== referenceSizing.horizontal || 
+        siblingSizing.vertical !== referenceSizing.vertical) {
+      console.log(`❌ Sizing mismatch: Expected (${referenceSizing.horizontal}, ${referenceSizing.vertical}), got (${siblingSizing.horizontal}, ${siblingSizing.vertical})`);
+      return false;
+    }
+  }
+  
+  console.log(`✅ All siblings have identical sizing modes`);
+  return true;
+}
+
+function isParentSiblingCompatible(parent: FrameNode, sibling: FrameNode): boolean {
+  if (!hasAutoLayout(parent) || !hasAutoLayout(sibling)) return false;
+  
+  const parentLayoutMode = parent.layoutMode;
+  let parentPrimarySizing: string;
+  let parentCounterSizing: string;
+  let siblingPrimarySizing: string;
+  let siblingCounterSizing: string;
+  
+  try {
+    if (parentLayoutMode === 'VERTICAL') {
+      parentPrimarySizing = parent.primaryAxisSizingMode;
+      parentCounterSizing = parent.counterAxisSizingMode;
+      siblingPrimarySizing = sibling.primaryAxisSizingMode;
+      siblingCounterSizing = sibling.counterAxisSizingMode;
+    } else if (parentLayoutMode === 'HORIZONTAL') {
+      parentPrimarySizing = parent.primaryAxisSizingMode;
+      parentCounterSizing = parent.counterAxisSizingMode;
+      siblingPrimarySizing = sibling.primaryAxisSizingMode;
+      siblingCounterSizing = sibling.counterAxisSizingMode;
+    } else {
+      return false;
+    }
+  } catch (error) {
+    return false;
+  }
+  
+  console.log(`🔍 PARENT-SIBLING COMPATIBILITY: "${safeGetNodeName(parent)}" + "${safeGetNodeName(sibling)}"`);
+  console.log(`  Parent sizing: primary=${parentPrimarySizing}, counter=${parentCounterSizing}`);
+  console.log(`  Sibling sizing: primary=${siblingPrimarySizing}, counter=${siblingCounterSizing}`);
+  
+  // Check primary axis compatibility using inheritance table
+  const primaryCompatible = isSizingCombinationCompatible(parentPrimarySizing, siblingPrimarySizing);
+  console.log(`  Primary axis compatible: ${primaryCompatible}`);
+  
+  // Check counter axis compatibility using inheritance table  
+  const counterCompatible = isSizingCombinationCompatible(parentCounterSizing, siblingCounterSizing);
+  console.log(`  Counter axis compatible: ${counterCompatible}`);
+  
+  const compatible = primaryCompatible && counterCompatible;
+  console.log(`  Overall compatibility: ${compatible ? '✅ YES' : '❌ NO'}`);
+  
+  return compatible;
+}
+
+function isSizingCombinationCompatible(parentSizing: string, childSizing: string): boolean {
+  // All combinations in our inheritance table are considered compatible
+  // This function could be expanded later if we discover incompatible combinations
+  
+  // Handle FIXED child sizing (similar to Phase 3 logic)
+  if (childSizing === 'FIXED') {
+    // For now, allow FIXED child sizing in sibling dissolution
+    // Could add stricter checks here in the future if needed
+    return true;
+  }
+  
+  // All other combinations (FILL, HUG, AUTO) are compatible
+  return true;
+}
 
 function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): CrossDirectionPadding {
   if (!hasAutoLayout(frame)) {
@@ -629,6 +767,12 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode,
   // Check padding requirement for partial dissolution
   if (requireZeroPadding && !siblingHasZeroPadding(sibling)) {
     console.log('❌ Sibling has padding (required to be 0 for partial dissolution)');
+    return false;
+  }
+  
+  // NEW: Check parent-sibling sizing compatibility
+  if (!isParentSiblingCompatible(parent, sibling)) {
+    console.log('❌ Sibling sizing not compatible with parent');
     return false;
   }
   
@@ -795,7 +939,27 @@ function canAllSiblingsBeDissolvedTogether(parentFrame: FrameNode): boolean {
     }
   }
   
-  // Every sibling must also be compatible (gap matching, visual properties, etc.)
+  // NEW: Check alignment harmony - all siblings must have identical alignment
+  if (!siblingsHaveIdenticalAlignment(siblingFrames)) {
+    console.log(`❌ Full dissolution blocked: siblings have different alignments`);
+    return false;
+  }
+  
+  // NEW: Check sizing harmony - all siblings must have identical sizing modes
+  if (!siblingsHaveIdenticalSizing(siblingFrames)) {
+    console.log(`❌ Full dissolution blocked: siblings have different sizing modes`);
+    return false;
+  }
+  
+  // NEW: Check parent-sibling compatibility for each sibling
+  for (const sibling of siblingFrames) {
+    if (!isParentSiblingCompatible(parentFrame, sibling)) {
+      console.log(`❌ Full dissolution blocked: sibling "${safeGetNodeName(sibling)}" not compatible with parent sizing`);
+      return false;
+    }
+  }
+  
+  // Every sibling must also pass individual compatibility checks
   for (const sibling of siblingFrames) {
     if (!canSiblingBeDissolvedSelectively(sibling, parentFrame, false)) {
       console.log(`❌ Full dissolution blocked by incompatible sibling: "${safeGetNodeName(sibling)}"`);
@@ -803,7 +967,7 @@ function canAllSiblingsBeDissolvedTogether(parentFrame: FrameNode): boolean {
     }
   }
   
-  console.log(`✅ ALL siblings have zero padding AND are compatible for full dissolution`);
+  console.log(`✅ ALL siblings have zero padding, identical alignment, identical sizing, parent compatibility, AND individual compatibility for full dissolution`);
   return true;
 }
 
@@ -816,6 +980,12 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
   const siblingFrames = layoutChildren.filter(child => isFrameNode(child)) as FrameNode[];
   
   if (siblingFrames.length === 0) return;
+
+  // Apply alignment inheritance BEFORE dissolving (using first sibling as reference since all are identical)
+  const referenceSibling = siblingFrames[0];
+  if (nodeExists(referenceSibling) && hasAutoLayout(referenceSibling)) {
+    applySiblingAlignmentInheritance(parentFrame, referenceSibling);
+  }
   
   let totalChildrenPromoted = 0;
   let paddingTransferred = false;
@@ -886,6 +1056,74 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
   cleaningResults.siblingGroupsOptimized++;
 }
 
+function applySiblingAlignmentInheritance(parentFrame: FrameNode, sibling: FrameNode): void {
+  if (!nodeExists(parentFrame) || !nodeExists(sibling)) return;
+  if (!hasAutoLayout(parentFrame) || !hasAutoLayout(sibling)) return;
+  
+  console.log(`🎯 SIBLING DISSOLUTION INHERITANCE: Applying alignment inheritance from "${safeGetNodeName(sibling)}" to "${safeGetNodeName(parentFrame)}"`);
+  
+  const parentLayoutMode = parentFrame.layoutMode;
+  let parentPrimarySizing: string;
+  let parentCounterSizing: string;
+  let siblingPrimarySizing: string;
+  let siblingCounterSizing: string;
+  
+  try {
+    if (parentLayoutMode === 'VERTICAL') {
+      parentPrimarySizing = parentFrame.primaryAxisSizingMode;
+      parentCounterSizing = parentFrame.counterAxisSizingMode;
+      siblingPrimarySizing = sibling.primaryAxisSizingMode;
+      siblingCounterSizing = sibling.counterAxisSizingMode;
+    } else if (parentLayoutMode === 'HORIZONTAL') {
+      parentPrimarySizing = parentFrame.primaryAxisSizingMode;
+      parentCounterSizing = parentFrame.counterAxisSizingMode;
+      siblingPrimarySizing = sibling.primaryAxisSizingMode;
+      siblingCounterSizing = sibling.counterAxisSizingMode;
+    } else {
+      return;
+    }
+  } catch (error) {
+    return;
+  }
+  
+  console.log(`📊 SIBLING INHERITANCE ANALYSIS:`);
+  console.log(`  Parent layout mode: ${parentLayoutMode}`);
+  console.log(`  Parent sizing: primary=${parentPrimarySizing}, counter=${parentCounterSizing}`);
+  console.log(`  Sibling sizing: primary=${siblingPrimarySizing}, counter=${siblingCounterSizing}`);
+  
+  // Store original parent alignment for logging
+  const originalAlignment = {
+    primary: parentFrame.primaryAxisAlignItems,
+    counter: parentFrame.counterAxisAlignItems
+  };
+  
+  console.log(`  Original parent alignment: primary=${originalAlignment.primary}, counter=${originalAlignment.counter}`);
+  console.log(`  Sibling alignment: primary=${sibling.primaryAxisAlignItems}, counter=${sibling.counterAxisAlignItems}`);
+  
+  // Apply table logic for primary axis
+  const inheritPrimaryAxis = shouldInheritAlignment(parentPrimarySizing, siblingPrimarySizing, 'primary');
+  
+  // Apply table logic for counter axis
+  const inheritCounterAxis = shouldInheritAlignment(parentCounterSizing, siblingCounterSizing, 'counter');
+  
+  // Apply inheritance decisions
+  if (inheritPrimaryAxis) {
+    parentFrame.primaryAxisAlignItems = sibling.primaryAxisAlignItems;
+    console.log(`🔄 Applied sibling primary alignment: ${sibling.primaryAxisAlignItems}`);
+  } else {
+    console.log(`🔄 Kept parent primary alignment: ${originalAlignment.primary}`);
+  }
+  
+  if (inheritCounterAxis) {
+    parentFrame.counterAxisAlignItems = sibling.counterAxisAlignItems;
+    console.log(`🔄 Applied sibling counter alignment: ${sibling.counterAxisAlignItems}`);
+  } else {
+    console.log(`🔄 Kept parent counter alignment: ${originalAlignment.counter}`);
+  }
+  
+  console.log(`📋 FINAL PARENT ALIGNMENT: primary=${parentFrame.primaryAxisAlignItems}, counter=${parentFrame.counterAxisAlignItems}`);
+}
+
 function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTransferPadding: boolean = true): void {
   console.log(`\n🚀 DISSOLVING SINGLE SIBLING: "${safeGetNodeName(sibling)}" → promoting children to "${safeGetNodeName(parent)}"`);
   
@@ -893,6 +1131,9 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
     console.log('❌ Sibling or parent no longer exists');
     return;
   }
+  
+  // Apply alignment inheritance BEFORE dissolving
+  applySiblingAlignmentInheritance(parent, sibling);
   
   // Get sibling's position among parent's children
   const parentChildren = getLayoutChildren(parent);
