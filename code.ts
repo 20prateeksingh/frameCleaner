@@ -323,27 +323,60 @@ function determineAlignmentInheritance(
     return { inheritPrimaryAxis: false, inheritCounterAxis: false, forceSpaceBetween: false };
   }
   
-  // CRITICAL: Check for single-child merge FIRST (highest priority)
-  // Single-child merges must preserve exact visual positioning
+  // Check for single-child merge
   const layoutChildren = getLayoutChildren(parentFrame);
   const isSingleChildMerge = layoutChildren.length === 1;
   
   if (isSingleChildMerge) {
-    console.log(`🎯 SINGLE-CHILD MERGE: Always inheriting ALL alignment properties to preserve visual positioning`);
+    console.log(`🎯 SINGLE-CHILD MERGE: Using sizing-aware alignment inheritance`);
     
-    // For single-child merges with auto-gap, we still inherit counter axis
-    if (childSpacingInfo?.hasAutoGap) {
-      return { 
-        inheritPrimaryAxis: true, 
-        inheritCounterAxis: true, // Now inherits counter axis for single-child!
-        forceSpaceBetween: true 
-      };
+    // Get sizing modes for both parent and child
+    let parentPrimarySizing: string;
+    let parentCounterSizing: string;
+    let childPrimarySizing: string;
+    let childCounterSizing: string;
+    
+    try {
+      if (parentLayoutMode === 'VERTICAL') {
+        parentPrimarySizing = parentFrame.primaryAxisSizingMode; // vertical
+        parentCounterSizing = parentFrame.counterAxisSizingMode; // horizontal
+        childPrimarySizing = childFrame.primaryAxisSizingMode; // vertical
+        childCounterSizing = childFrame.counterAxisSizingMode; // horizontal
+      } else if (parentLayoutMode === 'HORIZONTAL') {
+        parentPrimarySizing = parentFrame.primaryAxisSizingMode; // horizontal
+        parentCounterSizing = parentFrame.counterAxisSizingMode; // vertical
+        childPrimarySizing = childFrame.primaryAxisSizingMode; // horizontal
+        childCounterSizing = childFrame.counterAxisSizingMode; // vertical
+      } else {
+        return { inheritPrimaryAxis: false, inheritCounterAxis: false, forceSpaceBetween: false };
+      }
+    } catch (error) {
+      return { inheritPrimaryAxis: false, inheritCounterAxis: false, forceSpaceBetween: false };
+    }
+    
+    console.log(`📊 SIZING-AWARE INHERITANCE ANALYSIS:`);
+    console.log(`  Parent layout mode: ${parentLayoutMode}`);
+    console.log(`  Parent primary sizing: ${parentPrimarySizing}, counter sizing: ${parentCounterSizing}`);
+    console.log(`  Child primary sizing: ${childPrimarySizing}, counter sizing: ${childCounterSizing}`);
+    
+    // Apply table logic for primary axis
+    const inheritPrimaryAxis = shouldInheritAlignment(parentPrimarySizing, childPrimarySizing, 'primary');
+    console.log(`  Primary axis inheritance: ${inheritPrimaryAxis ? 'Child' : 'Parent'} (${parentPrimarySizing} parent + ${childPrimarySizing} child)`);
+    
+    // Apply table logic for counter axis
+    const inheritCounterAxis = shouldInheritAlignment(parentCounterSizing, childCounterSizing, 'counter');
+    console.log(`  Counter axis inheritance: ${inheritCounterAxis ? 'Child' : 'Parent'} (${parentCounterSizing} parent + ${childCounterSizing} child)`);
+    
+    // Handle auto-gap special case
+    const forceSpaceBetween = childSpacingInfo?.hasAutoGap || false;
+    if (forceSpaceBetween) {
+      console.log(`  Auto-gap detected: forcing SPACE_BETWEEN for primary axis`);
     }
     
     return { 
-      inheritPrimaryAxis: true, 
-      inheritCounterAxis: true, 
-      forceSpaceBetween: false 
+      inheritPrimaryAxis, 
+      inheritCounterAxis, 
+      forceSpaceBetween 
     };
   }
   
@@ -391,6 +424,56 @@ function determineAlignmentInheritance(
   console.log(`🔄 Multi-child scenario with unchanged layout mode: ${parentLayoutMode} - using sizing-based inheritance (primary: ${inheritPrimaryAxis}, counter: ${inheritCounterAxis})`);
   
   return { inheritPrimaryAxis, inheritCounterAxis, forceSpaceBetween: false };
+}
+
+// Helper function to apply the sizing inheritance table logic
+function shouldInheritAlignment(parentSizing: string, childSizing: string, axis: string): boolean {
+  console.log(`  📋 TABLE LOOKUP for ${axis} axis: Parent(${parentSizing}) + Child(${childSizing})`);
+  
+  // Apply the inheritance table (expanded to include AUTO):
+  // | Parent | Child | Inherit |
+  // | FILL   | FILL  | Child   |
+  // | FILL   | HUG   | Parent  |
+  // | FILL   | AUTO  | Parent  | (AUTO behaves like HUG)
+  // | FIXED  | FILL  | Child   |
+  // | FIXED  | HUG   | Parent  |
+  // | FIXED  | AUTO  | Parent  | (AUTO behaves like HUG)
+  // | HUG    | FILL  | Child   |
+  // | HUG    | HUG   | Child   |
+  // | HUG    | AUTO  | Child   | (AUTO behaves like HUG)
+  // | AUTO   | FILL  | Child   | (AUTO behaves like HUG)
+  // | AUTO   | HUG   | Child   | (AUTO behaves like HUG)
+  // | AUTO   | AUTO  | Child   | (AUTO behaves like HUG)
+  
+  if (parentSizing === 'FILL') {
+    if (childSizing === 'FILL') {
+      console.log(`    → Child (FILL child adapts to space usage)`);
+      return true; // Child
+    } else if (childSizing === 'HUG' || childSizing === 'AUTO') {
+      console.log(`    → Parent (Parent FILL context more important than child content flow)`);
+      return false; // Parent
+    }
+  } else if (parentSizing === 'FIXED') {
+    if (childSizing === 'FILL') {
+      console.log(`    → Child (Child fills fixed container, child alignment determines usage)`);
+      return true; // Child
+    } else if (childSizing === 'HUG' || childSizing === 'AUTO') {
+      console.log(`    → Parent (Parent FIXED alignment represents positioning context)`);
+      return false; // Parent
+    }
+  } else if (parentSizing === 'HUG' || parentSizing === 'AUTO') {
+    if (childSizing === 'FILL') {
+      console.log(`    → Child (Child fill behavior drives layout)`);
+      return true; // Child
+    } else if (childSizing === 'HUG' || childSizing === 'AUTO') {
+      console.log(`    → Child (Child content-driven alignment drives combined hugging/auto behavior)`);
+      return true; // Child
+    }
+  }
+  
+  // Fallback to child inheritance for unknown combinations
+  console.log(`    → Child (fallback for unknown combination)`);
+  return true;
 }
 
 // Initialize plugin
@@ -892,7 +975,7 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
   
   console.log(`\n🔄 ENHANCED SIBLING OPTIMIZATION: Checking ${siblingFrames.length} frame siblings in "${safeGetNodeName(parentFrame)}"`);
   
-  // PREEMPTIVE: Fix SCALE constraints on absolute positioned siblings (like mergeFrame logic)
+  // Fix SCALE constraints on absolute positioned siblings
   siblingFrames.forEach(sibling => {
     if ('layoutPositioning' in sibling && sibling.layoutPositioning === 'ABSOLUTE') {
       if ('constraints' in sibling && sibling.constraints) {
@@ -900,10 +983,7 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
         const hasScaleConstraints = constraints.horizontal === 'SCALE' || constraints.vertical === 'SCALE';
         
         if (hasScaleConstraints) {
-          console.log(`🔧 PREEMPTIVE: Fixing SCALE constraints for absolute sibling "${safeGetNodeName(sibling)}"`);
-          console.log(`  Old: ${JSON.stringify(constraints)}`);
           sibling.constraints = {horizontal: 'MIN', vertical: 'MIN'};
-          console.log(`  New: {"horizontal":"MIN","vertical":"MIN"}`);
         }
       }
     }
@@ -1148,6 +1228,41 @@ function canSafelyMerge(parent: FrameNode | GroupNode, child: FrameNode | GroupN
   
   if (!hasAutoLayout(parent) || !hasAutoLayout(child)) return false;
   
+  // PHASE 3: Child FIXED Sizing Handling
+  // Block child FIXED sizing when there are conflicts
+  if (isFrameNode(child) && hasAutoLayout(child)) {
+    const childHasFixedSizing = child.layoutSizingHorizontal === 'FIXED' || child.layoutSizingVertical === 'FIXED';
+    
+    if (childHasFixedSizing) {
+      console.log(`🔍 CHILD FIXED SIZING CHECK: "${safeGetNodeName(child)}" has FIXED sizing`);
+      console.log(`  Child horizontal sizing: ${child.layoutSizingHorizontal}`);
+      console.log(`  Child vertical sizing: ${child.layoutSizingVertical}`);
+      
+      // Check dimension compatibility
+      const dimensionsCompatible = sameDimensions;
+      console.log(`  Dimensions compatible: ${dimensionsCompatible} (${parent.width}x${parent.height} vs ${child.width}x${child.height})`);
+      
+      // Check alignment compatibility
+      const alignmentCompatible = (
+        parent.primaryAxisAlignItems === child.primaryAxisAlignItems &&
+        parent.counterAxisAlignItems === child.counterAxisAlignItems
+      );
+      console.log(`  Alignment compatible: ${alignmentCompatible}`);
+      console.log(`    Parent: primary=${parent.primaryAxisAlignItems}, counter=${parent.counterAxisAlignItems}`);
+      console.log(`    Child: primary=${child.primaryAxisAlignItems}, counter=${child.counterAxisAlignItems}`);
+      
+      // Allow merge if either dimensions OR alignment are compatible
+      if (!dimensionsCompatible && !alignmentCompatible) {
+        console.log(`❌ BLOCKING MERGE: Child has FIXED sizing with incompatible dimensions AND alignment`);
+        return false;
+      } else if (dimensionsCompatible) {
+        console.log(`✅ ALLOWING MERGE: Compatible dimensions override FIXED sizing conflict`);
+      } else if (alignmentCompatible) {
+        console.log(`✅ ALLOWING MERGE: Compatible alignment override FIXED sizing conflict`);
+      }
+    }
+  }
+  
   if (!fillsAreCompatible(parent, child, sameDimensions)) return false;
   
   if (hasStroke(child) && !sameDimensions) return false;
@@ -1338,20 +1453,14 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
           const hasScaleConstraints = constraints.horizontal === 'SCALE' || constraints.vertical === 'SCALE';
           
           if (hasScaleConstraints) {
-            console.log(`🔧 PREEMPTIVE: Fixing SCALE constraints for "${safeGetNodeName(element)}" before layout changes`);
-            console.log(`  Old: ${JSON.stringify(constraints)}`);
             element.constraints = {horizontal: 'MIN', vertical: 'MIN'};
-            console.log(`  New: {"horizontal":"MIN","vertical":"MIN"}`);
-          } else {
-            console.log(`ℹ️ PREEMPTIVE: "${safeGetNodeName(element)}" has non-SCALE constraints, leaving unchanged: ${JSON.stringify(constraints)}`);
           }
         }
       });
       
-      // CRITICAL: Capture original state AFTER fixing constraints but BEFORE layout changes
+      // Capture original state AFTER fixing constraints but BEFORE layout changes
       originalAbsoluteStates = childAbsoluteElements.map(element => {
         if ('x' in element && 'y' in element) {
-          console.log(`📦 CAPTURING ORIGINAL STATE: "${safeGetNodeName(element)}" at (${element.x}, ${element.y}) size ${element.width}x${element.height}`);
           return {
             element,
             x: element.x,
