@@ -1,9 +1,7 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Complete TypeScript with Enhanced Critical Safety Checks and Select-and-Zoom Feature
-// Optimizes auto-layout structures by merging unnecessary nested frames and selectively dissolving compatible siblings
-// Features: Layout sizing inheritance, selective sibling dissolution with full→partial hierarchy, cross-direction padding validation
-// V1 ENHANCED: Critical safety checks for transforms, gradients, images, prototype interactions, wrap mode, baseline alignment
+// Frame Cleaner Plugin - Streamlined Auto-Analysis Version
+// Features: Real-time analysis on selection change, inheritance details, multi-frame support
 
 // Type definitions
 interface CleaningResults {
@@ -18,14 +16,29 @@ interface CleaningResults {
   }>;
 }
 
+interface InheritanceDetails {
+  children: number;
+  padding: string;
+  alignment: string;
+  sizingMode: string;
+  itemSpacing: string;
+  layoutMode: string;
+}
+
+interface RemovableFrameInfo {
+  name: string;
+  nodeId: string;
+  parentName: string;
+  inheritance: InheritanceDetails;
+}
+
 interface AnalysisResults {
   totalFrames: number;
   mergeableFrames: number;
   optimizableSiblingGroups: number;
   paddingOptimizations: number;
   removableFrames: number;
-  removableFrameNames: string[];
-  removableNodeIds: string[];
+  removableFrameInfos: RemovableFrameInfo[];
   frameName: string;
   frameId: string;
   issues: Array<{
@@ -95,7 +108,6 @@ function isStringValue(value: string | symbol): value is string {
 }
 
 // PHASE 1 CRITICAL SAFETY CHECKS
-
 function hasTransformOrRotation(node: FrameNode | GroupNode): boolean {
   try {
     if (!nodeExists(node)) return false;
@@ -277,39 +289,6 @@ function getChildSpacingInfo(childFrame: FrameNode): {
   };
 }
 
-function calculateImpliedGap(container: FrameNode): number {
-  if (!hasAutoLayout(container) || container.primaryAxisAlignItems !== 'SPACE_BETWEEN') {
-    return 0;
-  }
-  
-  const currentGap = container.itemSpacing;
-  if (typeof currentGap === 'number') {
-    return currentGap;
-  }
-  
-  const children = getLayoutChildren(container);
-  if (children.length < 2) return 0;
-  
-  try {
-    const containerSize = container.layoutMode === 'HORIZONTAL' ? container.width : container.height;
-    const childrenTotalSize = children.reduce((sum, child) => {
-      if (!nodeExists(child)) return sum;
-      const childSize = container.layoutMode === 'HORIZONTAL' ? child.width : child.height;
-      return sum + childSize;
-    }, 0);
-    
-    const paddingStart = container.layoutMode === 'HORIZONTAL' ? container.paddingLeft : container.paddingTop;
-    const paddingEnd = container.layoutMode === 'HORIZONTAL' ? container.paddingRight : container.paddingBottom;
-    
-    const availableSpace = containerSize - childrenTotalSize - paddingStart - paddingEnd;
-    const numberOfGaps = children.length - 1;
-    
-    return numberOfGaps > 0 ? availableSpace / numberOfGaps : 0;
-  } catch (error) {
-    return 0;
-  }
-}
-
 // Safe node access helpers
 function nodeExists(node: BaseNode): boolean {
   try {
@@ -344,6 +323,130 @@ function safeGetDimensions(node: SceneNode): { width: number; height: number } {
     return { width: node.width, height: node.height };
   } catch (error) {
     return { width: 0, height: 0 };
+  }
+}
+
+// Helper functions for absolute positioning support
+function getLayoutChildren(node: FrameNode | GroupNode): SceneNode[] {
+  if (!nodeExists(node) || !hasChildren(node)) return [];
+  
+  try {
+    return node.children.filter((child: SceneNode): boolean => {
+      if (!nodeExists(child)) return false;
+      return !('layoutPositioning' in child) || child.layoutPositioning !== 'ABSOLUTE';
+    });
+  } catch (error) {
+    return [];
+  }
+}
+
+function getAbsoluteChildren(node: FrameNode | GroupNode): SceneNode[] {
+  if (!nodeExists(node) || !hasChildren(node)) return [];
+  
+  try {
+    return node.children.filter((child: SceneNode): boolean => {
+      if (!nodeExists(child)) return false;
+      return 'layoutPositioning' in child && child.layoutPositioning === 'ABSOLUTE';
+    });
+  } catch (error) {
+    return [];
+  }
+}
+
+function dimensionsMatch(parent: FrameNode | GroupNode, child: FrameNode | GroupNode): boolean {
+  if (!nodeExists(parent) || !nodeExists(child)) return false;
+  
+  try {
+    const parentDims = safeGetDimensions(parent);
+    const childDims = safeGetDimensions(child);
+    return parentDims.width === childDims.width && parentDims.height === childDims.height;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Inheritance detail calculation functions
+function calculateInheritanceDetails(frame: FrameNode | GroupNode, parent: FrameNode | GroupNode): InheritanceDetails {
+  const details: InheritanceDetails = {
+    children: 0,
+    padding: '',
+    alignment: '',
+    sizingMode: '',
+    itemSpacing: '',
+    layoutMode: ''
+  };
+
+  try {
+    // Calculate children count
+    if (hasChildren(frame)) {
+      details.children = getLayoutChildren(frame).length;
+    }
+
+    // Calculate padding inheritance
+    if (isFrameNode(frame) && isFrameNode(parent) && hasAutoLayout(frame) && hasAutoLayout(parent)) {
+      const combinedPadding = calculateCombinedPadding(parent, frame);
+      const currentParentPadding = {
+        left: parent.paddingLeft,
+        right: parent.paddingRight,
+        top: parent.paddingTop,
+        bottom: parent.paddingBottom
+      };
+      
+      const addedPadding = {
+        left: combinedPadding.left - currentParentPadding.left,
+        right: combinedPadding.right - currentParentPadding.right,
+        top: combinedPadding.top - currentParentPadding.top,
+        bottom: combinedPadding.bottom - currentParentPadding.bottom
+      };
+
+      if (addedPadding.left > 0 || addedPadding.right > 0 || addedPadding.top > 0 || addedPadding.bottom > 0) {
+        details.padding = `+${addedPadding.top}px, +${addedPadding.right}px, +${addedPadding.bottom}px, +${addedPadding.left}px`;
+      }
+
+      // Calculate alignment inheritance
+      const childSpacingInfo = getChildSpacingInfo(frame);
+      const alignmentInheritance = determineAlignmentInheritance(parent, frame, childSpacingInfo);
+      
+      if (alignmentInheritance.inheritPrimaryAxis) {
+        details.alignment = `${frame.primaryAxisAlignItems}`;
+      }
+      if (alignmentInheritance.inheritCounterAxis) {
+        details.alignment += details.alignment ? `, ${frame.counterAxisAlignItems}` : `${frame.counterAxisAlignItems}`;
+      }
+
+      // Calculate sizing mode inheritance
+      details.sizingMode = `${frame.primaryAxisSizingMode}, ${frame.counterAxisSizingMode}`;
+
+      // Calculate item spacing inheritance
+      if (childSpacingInfo.itemSpacing > 0) {
+        details.itemSpacing = `${childSpacingInfo.itemSpacing}px`;
+      }
+
+      // Calculate layout mode inheritance
+      if (frame.layoutMode !== 'NONE') {
+        details.layoutMode = frame.layoutMode;
+      }
+    }
+  } catch (error) {
+    // Silent fail, return default values
+  }
+
+  return details;
+}
+
+function getParentFrame(node: SceneNode): FrameNode | null {
+  try {
+    if (!nodeExists(node) || !node.parent) return null;
+    
+    // Check if parent is a SceneNode first, then check if it's a FrameNode
+    const parent = node.parent;
+    if ('type' in parent && parent.type === 'FRAME') {
+      return parent as FrameNode;
+    }
+    
+    return null;
+  } catch (error) {
+    return null;
   }
 }
 
@@ -552,161 +655,7 @@ function shouldInheritAlignment(parentSizing: string, childSizing: string, axis:
   return true;
 }
 
-// Initialize plugin
-figma.showUI(__html__, { width: 350, height: 500 });
-
-console.log('Plugin initialized, setting up message handler');
-
-let cleaningResults: CleaningResults = {
-  framesAnalyzed: 0,
-  framesMerged: 0,
-  siblingGroupsOptimized: 0,
-  siblingsRemoved: 0,
-  paddingOptimized: 0,
-  issues: []
-};
-
-// Store the analyzed frame for optimization
-let analyzedFrame: SceneNode | null = null;
-let analyzedFrameData: AnalysisResults | null = null;
-
-// Selection change monitoring
-figma.on('selectionchange', (): void => {
-  const hasSelection: boolean = figma.currentPage.selection.length > 0;
-  figma.ui.postMessage({
-    type: 'selection-changed',
-    hasSelection: hasSelection,
-    selectionCount: figma.currentPage.selection.length
-  });
-});
-
-// Send initial selection state
-setTimeout((): void => {
-  const hasSelection: boolean = figma.currentPage.selection.length > 0;
-  figma.ui.postMessage({
-    type: 'selection-changed',
-    hasSelection: hasSelection,
-    selectionCount: figma.currentPage.selection.length
-  });
-}, 100);
-
-// Message handler
-figma.ui.onmessage = (msg: UIMessage): void => {
-  console.log('Received message:', msg);
-  
-  switch (msg.type) {
-    case 'analyze-selection':
-      analyzeSelection();
-      break;
-    case 'clean-selection':
-      cleanSelection();
-      break;
-    case 'analyze-page':
-      analyzePage();
-      break;
-    case 'clean-page':
-      cleanPage();
-      break;
-    case 'select-and-zoom':
-      console.log('Handling select-and-zoom for nodeId:', msg.nodeId);
-      figma.notify(`Debug: Received select message for ${msg.nodeId}`);
-      if (msg.nodeId) {
-        selectAndZoomToNode(msg.nodeId);
-      } else {
-        console.error('No nodeId provided in select-and-zoom message');
-        figma.notify("Frame not found");
-      }
-      break;
-    default:
-      console.log('Unknown message type:', msg.type);
-  }
-};
-
-// Select and zoom to node function
-function selectAndZoomToNode(nodeId: string): void {
-  console.log('selectAndZoomToNode called with nodeId:', nodeId);
-  
-  if (!nodeId) {
-    console.error('No nodeId provided');
-    figma.notify("Frame not found");
-    return;
-  }
-  
-  try {
-    console.log('Attempting to get node by ID:', nodeId);
-    const node = figma.getNodeById(nodeId);
-    
-    console.log('Node found:', node);
-    
-    if (!node || !nodeExists(node)) {
-      console.error('Node not found or removed:', nodeId);
-      figma.notify("Frame not found");
-      return;
-    }
-    
-    console.log('Node exists, attempting to select and zoom');
-    console.log('Node details:', {
-      id: node.id,
-      name: safeGetNodeName(node),
-      type: node.type,
-      removed: node.removed
-    });
-    
-    // Select the node
-    figma.currentPage.selection = [node as SceneNode];
-    console.log('Selection set, current selection:', figma.currentPage.selection.map(n => n.name));
-    
-    // Zoom to the node
-    figma.viewport.scrollAndZoomIntoView([node as SceneNode]);
-    console.log('Zoom completed');
-    
-  } catch (error) {
-    console.error('Error in selectAndZoomToNode:', error);
-    figma.notify("Frame not found");
-  }
-}
-
-// Helper functions for absolute positioning support
-function getLayoutChildren(node: FrameNode | GroupNode): SceneNode[] {
-  if (!nodeExists(node) || !hasChildren(node)) return [];
-  
-  try {
-    return node.children.filter((child: SceneNode): boolean => {
-      if (!nodeExists(child)) return false;
-      return !('layoutPositioning' in child) || child.layoutPositioning !== 'ABSOLUTE';
-    });
-  } catch (error) {
-    return [];
-  }
-}
-
-function getAbsoluteChildren(node: FrameNode | GroupNode): SceneNode[] {
-  if (!nodeExists(node) || !hasChildren(node)) return [];
-  
-  try {
-    return node.children.filter((child: SceneNode): boolean => {
-      if (!nodeExists(child)) return false;
-      return 'layoutPositioning' in child && child.layoutPositioning === 'ABSOLUTE';
-    });
-  } catch (error) {
-    return [];
-  }
-}
-
-function dimensionsMatch(parent: FrameNode | GroupNode, child: FrameNode | GroupNode): boolean {
-  if (!nodeExists(parent) || !nodeExists(child)) return false;
-  
-  try {
-    const parentDims = safeGetDimensions(parent);
-    const childDims = safeGetDimensions(child);
-    return parentDims.width === childDims.width && parentDims.height === childDims.height;
-  } catch (error) {
-    return false;
-  }
-}
-
 // Helper functions for sibling dissolution compatibility
-
 function siblingsHaveIdenticalAlignment(siblings: FrameNode[]): boolean {
   if (siblings.length <= 1) return true;
   
@@ -1233,56 +1182,346 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
   }
 }
 
-// Analysis functions
-function analyzeSelection(): void {
-  const selection: readonly SceneNode[] = figma.currentPage.selection;
+// Initialize plugin
+figma.showUI(__html__, { width: 350, height: 600 });
+
+console.log('Frame Cleaner Plugin - Streamlined Version initialized');
+
+let cleaningResults: CleaningResults = {
+  framesAnalyzed: 0,
+  framesMerged: 0,
+  siblingGroupsOptimized: 0,
+  siblingsRemoved: 0,
+  paddingOptimized: 0,
+  issues: []
+};
+
+// Store frames with active temporary strokes for cleanup
+let framesWithActiveStrokes: Map<string, {
+  node: FrameNode;
+  originalStrokes: readonly Paint[];
+  originalStrokeWeight: number;
+  originalStrokeAlign: 'INSIDE' | 'OUTSIDE' | 'CENTER';
+  originalStrokeStyleId: string;
+}> = new Map();
+
+// Cleanup function to remove all active strokes
+function cleanupActiveStrokes(): void {
+  framesWithActiveStrokes.forEach((data, nodeId) => {
+    try {
+      const { node, originalStrokes, originalStrokeWeight, originalStrokeAlign, originalStrokeStyleId } = data;
+      
+      if (nodeExists(node)) {
+        // Restore original stroke style first (for variables)
+        if (originalStrokeStyleId && 'strokeStyleId' in node) {
+          node.strokeStyleId = originalStrokeStyleId;
+        } else if ('strokeStyleId' in node) {
+          node.strokeStyleId = '';
+        }
+        
+        // Restore original strokes
+        node.strokes = originalStrokes;
+        
+        // Restore other properties
+        if (originalStrokeWeight > 0) {
+          node.strokeWeight = originalStrokeWeight;
+        }
+        
+        node.strokeAlign = originalStrokeAlign;
+      }
+    } catch (error) {
+      console.error('Error cleaning up stroke for node:', nodeId, error);
+    }
+  });
   
-  if (selection.length === 0) {
+  // Clear the tracking map
+  framesWithActiveStrokes.clear();
+}
+
+// Plugin close handler
+figma.on('close', () => {
+  cleanupActiveStrokes();
+});
+
+// Store the analyzed frame for optimization
+let analyzedFrame: SceneNode | null = null;
+let analyzedFrameData: AnalysisResults | null = null;
+
+// Selection change monitoring with immediate analysis
+figma.on('selectionchange', (): void => {
+  const selection = figma.currentPage.selection;
+  const hasSelection: boolean = selection.length > 0;
+  
+  if (hasSelection) {
+    // Immediate analysis on selection change
+    const results: AnalysisResults = analyzeFrames(selection);
+    
+    // Determine frame name for display
+    if (selection.length === 1) {
+      results.frameName = safeGetNodeName(selection[0]);
+      results.frameId = selection[0].id;
+    } else {
+      results.frameName = 'Multiple Frames selected';
+      results.frameId = 'multiple';
+    }
+    
+    // Store for optimization
+    analyzedFrame = selection[0];
+    analyzedFrameData = results;
+    
     figma.ui.postMessage({
       type: 'analysis-result',
-      message: 'Please select some frames first',
+      hasSelection: true,
+      results: results
+    });
+  } else {
+    // Clear analysis and go back to initial state
+    analyzedFrame = null;
+    analyzedFrameData = null;
+    
+    figma.ui.postMessage({
+      type: 'selection-changed',
+      hasSelection: false,
       results: null
     });
-    figma.notify("Please select some frames first");
-    return;
   }
+});
+
+// Send initial selection state
+setTimeout((): void => {
+  const selection = figma.currentPage.selection;
+  const hasSelection: boolean = selection.length > 0;
   
-  // Store the first selected frame for later optimization
-  analyzedFrame = selection[0];
+  if (hasSelection) {
+    // Immediate analysis on plugin open if something is selected
+    const results: AnalysisResults = analyzeFrames(selection);
+    
+    if (selection.length === 1) {
+      results.frameName = safeGetNodeName(selection[0]);
+      results.frameId = selection[0].id;
+    } else {
+      results.frameName = 'Multiple Frames selected';
+      results.frameId = 'multiple';
+    }
+    
+    analyzedFrame = selection[0];
+    analyzedFrameData = results;
+    
+    figma.ui.postMessage({
+      type: 'analysis-result',
+      hasSelection: true,
+      results: results
+    });
+  } else {
+    figma.ui.postMessage({
+      type: 'selection-changed',
+      hasSelection: false,
+      results: null
+    });
+  }
+}, 100);
+
+// Message handler
+figma.ui.onmessage = (msg: UIMessage): void => {
+  console.log('Received message:', msg);
   
-  const results: AnalysisResults = analyzeFrames(selection);
-  
-  // Add frame information to results
-  results.frameName = safeGetNodeName(selection[0]);
-  results.frameId = selection[0].id;
-  
-  // Store the analysis data globally
-  analyzedFrameData = results;
-  
-  figma.ui.postMessage({
-    type: 'analysis-result',
-    message: 'Analysis complete',
-    results: results
-  });
+  switch (msg.type) {
+    case 'optimize':
+      optimizeSelection();
+      break;
+    case 'locate-frame':
+      if (msg.nodeId) {
+        locateFrame(msg.nodeId);
+      }
+      break;
+    default:
+      console.log('Unknown message type:', msg.type);
+  }
+};
+
+// Locate frame with temporary highlight
+function locateFrame(nodeId: string): void {
+  try {
+    const node = figma.getNodeById(nodeId);
+    
+    if (!node || !nodeExists(node)) {
+      figma.notify("Frame not found");
+      return;
+    }
+    
+    // Check if node is a SceneNode first
+    if (!('type' in node) || !node.type) {
+      figma.notify("Invalid node type");
+      return;
+    }
+    
+    const sceneNode = node as SceneNode;
+    
+    // Only zoom to the frame (don't select it)
+    figma.viewport.scrollAndZoomIntoView([sceneNode]);
+    
+    // Add temporary blue stroke if it's a frame
+    if (isFrameNode(sceneNode)) {
+      // Store original values with safe symbol handling and variable support
+      const originalStrokes = sceneNode.strokes;
+      const originalStrokeWeight = isNumberValue(sceneNode.strokeWeight) ? sceneNode.strokeWeight : 0;
+      const originalStrokeAlign = sceneNode.strokeAlign;
+      
+      // Also store stroke style ID for variable-bound strokes
+      const originalStrokeStyleId = ('strokeStyleId' in sceneNode && isStringValue(sceneNode.strokeStyleId)) 
+        ? sceneNode.strokeStyleId 
+        : '';
+      
+      // Track this frame for cleanup
+      framesWithActiveStrokes.set(nodeId, {
+        node: sceneNode,
+        originalStrokes,
+        originalStrokeWeight,
+        originalStrokeAlign,
+        originalStrokeStyleId
+      });
+      
+      // Apply blue highlight stroke
+      sceneNode.strokes = [{
+        type: 'SOLID',
+        color: { r: 0.2, g: 0.4, b: 1 }, // Blue color
+        visible: true
+      }];
+      sceneNode.strokeWeight = 3;
+      sceneNode.strokeAlign = 'INSIDE';
+      
+      // Clear any stroke style to ensure our blue color shows
+      if ('strokeStyleId' in sceneNode) {
+        sceneNode.strokeStyleId = '';
+      }
+      
+      // Remove stroke after 1 second (reduced from 2)
+      setTimeout(() => {
+        try {
+          if (nodeExists(sceneNode) && framesWithActiveStrokes.has(nodeId)) {
+            // Gradually fade stroke by reducing opacity first
+            if (sceneNode.strokes && isArrayValue(sceneNode.strokes) && sceneNode.strokes.length > 0) {
+              const currentStroke = sceneNode.strokes[0];
+              if (currentStroke.type === 'SOLID') {
+                sceneNode.strokes = [{
+                  type: 'SOLID',
+                  color: { 
+                    r: currentStroke.color.r, 
+                    g: currentStroke.color.g, 
+                    b: currentStroke.color.b 
+                  },
+                  opacity: 0.3,
+                  visible: true
+                }];
+              }
+            }
+            
+            // Complete removal after short fade
+            setTimeout(() => {
+              if (nodeExists(sceneNode) && framesWithActiveStrokes.has(nodeId)) {
+                try {
+                  const data = framesWithActiveStrokes.get(nodeId);
+                  if (data) {
+                    // Restore original stroke style first (for variables)
+                    if (data.originalStrokeStyleId && 'strokeStyleId' in sceneNode) {
+                      sceneNode.strokeStyleId = data.originalStrokeStyleId;
+                    } else if ('strokeStyleId' in sceneNode) {
+                      sceneNode.strokeStyleId = '';
+                    }
+                    
+                    // Then restore strokes (this maintains variable bindings)
+                    sceneNode.strokes = data.originalStrokes;
+                    
+                    // Restore other properties
+                    if (data.originalStrokeWeight > 0) {
+                      sceneNode.strokeWeight = data.originalStrokeWeight;
+                    }
+                    
+                    sceneNode.strokeAlign = data.originalStrokeAlign;
+                    
+                    // Remove from tracking since it's complete
+                    framesWithActiveStrokes.delete(nodeId);
+                  }
+                } catch (restoreError) {
+                  console.error('Error in detailed restoration:', restoreError);
+                  // Fallback: use cleanup function
+                  const data = framesWithActiveStrokes.get(nodeId);
+                  if (data) {
+                    try {
+                      sceneNode.strokes = data.originalStrokes;
+                      sceneNode.strokeAlign = data.originalStrokeAlign;
+                      framesWithActiveStrokes.delete(nodeId);
+                    } catch (fallbackError) {
+                      console.error('Fallback restoration failed:', fallbackError);
+                      framesWithActiveStrokes.delete(nodeId); // Remove even if restoration failed
+                    }
+                  }
+                }
+              }
+            }, 200);
+          }
+        } catch (error) {
+          console.error('Error during fade:', error);
+          // Emergency cleanup
+          if (framesWithActiveStrokes.has(nodeId)) {
+            const data = framesWithActiveStrokes.get(nodeId);
+            if (data && nodeExists(sceneNode)) {
+              try {
+                sceneNode.strokes = data.originalStrokes;
+                if (data.originalStrokeStyleId && 'strokeStyleId' in sceneNode) {
+                  sceneNode.strokeStyleId = data.originalStrokeStyleId;
+                }
+                framesWithActiveStrokes.delete(nodeId);
+              } catch (emergencyError) {
+                console.error('Emergency restoration failed:', emergencyError);
+                framesWithActiveStrokes.delete(nodeId); // Remove even if failed
+              }
+            }
+          }
+        }
+      }, 1000); // Changed from 2000ms to 1000ms
+    }
+    
+  } catch (error) {
+    console.error('Error in locateFrame:', error);
+    figma.notify("Error locating frame");
+  }
 }
 
-function analyzePage(): void {
-  const results: AnalysisResults = analyzeFrames(figma.currentPage.children);
-  figma.ui.postMessage({
-    type: 'analysis-result',
-    message: 'Page analysis complete',
-    results: results
-  });
-}
-
-function cleanSelection(): void {
-  // If we have a stored analyzed frame, use that instead of current selection
+function optimizeSelection(): void {
+  // Use stored analyzed frame for optimization
   if (analyzedFrame && nodeExists(analyzedFrame)) {
     cleanFrames([analyzedFrame]);
     
     // Clear the stored frame after optimization
     analyzedFrame = null;
     analyzedFrameData = null;
+    
+    // After optimization, trigger a new analysis if there's still a selection
+    setTimeout(() => {
+      const selection = figma.currentPage.selection;
+      if (selection.length > 0) {
+        const results: AnalysisResults = analyzeFrames(selection);
+        
+        if (selection.length === 1) {
+          results.frameName = safeGetNodeName(selection[0]);
+          results.frameId = selection[0].id;
+        } else {
+          results.frameName = 'Multiple Frames selected';
+          results.frameId = 'multiple';
+        }
+        
+        analyzedFrame = selection[0];
+        analyzedFrameData = results;
+        
+        figma.ui.postMessage({
+          type: 'analysis-result',
+          hasSelection: true,
+          results: results
+        });
+      }
+    }, 100);
+    
     return;
   }
   
@@ -1290,19 +1529,11 @@ function cleanSelection(): void {
   const selection: readonly SceneNode[] = figma.currentPage.selection;
   
   if (selection.length === 0) {
-    figma.ui.postMessage({
-      type: 'cleaning-result',
-      results: { framesMerged: 0, message: 'Please select some frames first' }
-    });
     figma.notify("Please select some frames first");
     return;
   }
   
   cleanFrames(selection);
-}
-
-function cleanPage(): void {
-  cleanFrames(figma.currentPage.children);
 }
 
 function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
@@ -1312,8 +1543,7 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
     optimizableSiblingGroups: 0,
     paddingOptimizations: 0,
     removableFrames: 0,
-    removableFrameNames: [],
-    removableNodeIds: [],
+    removableFrameInfos: [],
     frameName: '',
     frameId: '',
     issues: []
@@ -1330,8 +1560,17 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
       if (canBeMerged(node) && nodeExists(node)) {
         results.mergeableFrames++;
         results.removableFrames++;
-        results.removableFrameNames.push(safeGetNodeName(node));
-        results.removableNodeIds.push(node.id);
+        
+        const parent = getParentFrame(node);
+        const parentName = parent ? safeGetNodeName(parent) : 'Root';
+        const inheritance = calculateInheritanceDetails(node, parent || node);
+        
+        results.removableFrameInfos.push({
+          name: safeGetNodeName(node),
+          nodeId: node.id,
+          parentName: parentName,
+          inheritance: inheritance
+        });
       }
       
       if (isFrameNode(node) && hasAutoLayout(node) && nodeExists(node)) {
@@ -1344,8 +1583,15 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
             siblingFrames.forEach(sibling => {
               if (nodeExists(sibling)) {
                 results.removableFrames++;
-                results.removableFrameNames.push(safeGetNodeName(sibling));
-                results.removableNodeIds.push(sibling.id);
+                
+                const inheritance = calculateInheritanceDetails(sibling, node);
+                
+                results.removableFrameInfos.push({
+                  name: safeGetNodeName(sibling),
+                  nodeId: sibling.id,
+                  parentName: safeGetNodeName(node),
+                  inheritance: inheritance
+                });
               }
             });
           } else {
@@ -1357,8 +1603,15 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
                   hasPartialOptimization = true;
                 }
                 results.removableFrames++;
-                results.removableFrameNames.push(safeGetNodeName(sibling));
-                results.removableNodeIds.push(sibling.id);
+                
+                const inheritance = calculateInheritanceDetails(sibling, node);
+                
+                results.removableFrameInfos.push({
+                  name: safeGetNodeName(sibling),
+                  nodeId: sibling.id,
+                  parentName: safeGetNodeName(node),
+                  inheritance: inheritance
+                });
               }
             });
           }
@@ -1400,6 +1653,153 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
   });
   
   return results;
+}
+
+// Core logic functions
+function canBeMerged(node: FrameNode | GroupNode): boolean {
+  if (!isFrameOrGroup(node)) return false;
+  
+  const layoutChildren: SceneNode[] = getLayoutChildren(node);
+  
+  if (layoutChildren.length !== 1) return false;
+  
+  const child = layoutChildren[0];
+  if (!isFrameOrGroup(child)) return false;
+  
+  return canSafelyMerge(node, child);
+}
+
+function canSafelyMerge(parent: FrameNode | GroupNode, child: FrameNode | GroupNode): boolean {
+  const sameDimensions: boolean = dimensionsMatch(parent, child);
+  
+  if (isGroupNode(parent) || isGroupNode(child)) {
+    return false;
+  }
+  
+  if (!hasAutoLayout(parent) || !hasAutoLayout(child)) {
+    return false;
+  }
+  
+  // PHASE 1 CRITICAL SAFETY CHECKS
+  if (hasTransformOrRotation(parent) || hasComplexFills(parent) || 
+      hasComplexStrokes(parent) || hasPrototypeInteractions(parent) || 
+      hasAdvancedLayoutModes(parent)) {
+    return false;
+  }
+  
+  if (hasTransformOrRotation(child) || hasComplexFills(child) || 
+      hasComplexStrokes(child) || hasPrototypeInteractions(child) || 
+      hasAdvancedLayoutModes(child)) {
+    return false;
+  }
+  
+  if (!fillsAreCompatible(parent, child, sameDimensions)) {
+    return false;
+  }
+  
+  if (hasStroke(child) && !sameDimensions) return false;
+  if (hasEffects(child) && !sameDimensions) return false;
+  if (hasCornerRadius(child) && !sameDimensions) return false;
+  if (child.opacity !== 1) return false;
+  
+  return true;
+}
+
+function fillsAreCompatible(parent: FrameNode | GroupNode, child: FrameNode | GroupNode, sameDimensions: boolean = false): boolean {
+  const parentFills = ('fills' in parent) ? parent.fills : [];
+  const childFills = ('fills' in child) ? child.fills : [];
+  
+  if (!childFills || !isArrayValue(childFills) || childFills.length === 0) return true;
+  if (!parentFills || !isArrayValue(parentFills) || parentFills.length === 0) return true;
+  if (sameDimensions && childFills && isArrayValue(childFills) && childFills.length > 0) return true;
+  
+  const identical = JSON.stringify(parentFills) === JSON.stringify(childFills);
+  return identical;
+}
+
+function hasStroke(node: FrameNode | GroupNode): boolean {
+  return ('strokes' in node) && node.strokes && isArrayValue(node.strokes) && node.strokes.length > 0;
+}
+
+function hasEffects(node: FrameNode | GroupNode): boolean {
+  return ('effects' in node) && node.effects && isArrayValue(node.effects) && node.effects.length > 0;
+}
+
+function hasCornerRadius(node: FrameNode | GroupNode): boolean {
+  return isFrameNode(node) && 
+         'cornerRadius' in node && 
+         isNumberValue(node.cornerRadius) && 
+         node.cornerRadius > 0;
+}
+
+function hasPaddingOptimization(node: FrameNode | GroupNode): boolean {
+  if (!isFrameNode(node) || !hasAutoLayout(node)) return false;
+  
+  const layoutChildren: SceneNode[] = getLayoutChildren(node);
+  
+  return layoutChildren.length === 1 && 
+         isFrameOrGroup(layoutChildren[0]) && 
+         (node.paddingLeft > 0 || node.paddingRight > 0 || 
+          node.paddingTop > 0 || node.paddingBottom > 0);
+}
+
+function calculateCombinedPadding(parent: FrameNode | GroupNode, child: FrameNode | GroupNode): CombinedPadding {
+  const parentPadding = {
+    left: isFrameNode(parent) && hasAutoLayout(parent) ? parent.paddingLeft : 0,
+    right: isFrameNode(parent) && hasAutoLayout(parent) ? parent.paddingRight : 0,
+    top: isFrameNode(parent) && hasAutoLayout(parent) ? parent.paddingTop : 0,
+    bottom: isFrameNode(parent) && hasAutoLayout(parent) ? parent.paddingBottom : 0
+  };
+  
+  const childPadding = {
+    left: isFrameNode(child) && hasAutoLayout(child) ? child.paddingLeft : 0,
+    right: isFrameNode(child) && hasAutoLayout(child) ? child.paddingRight : 0,
+    top: isFrameNode(child) && hasAutoLayout(child) ? child.paddingTop : 0,
+    bottom: isFrameNode(child) && hasAutoLayout(child) ? child.paddingBottom : 0
+  };
+  
+  return {
+    left: parentPadding.left + childPadding.left,
+    right: parentPadding.right + childPadding.right,
+    top: parentPadding.top + childPadding.top,
+    bottom: parentPadding.bottom + childPadding.bottom
+  };
+}
+
+function checkForIssues(node: FrameNode | GroupNode): Array<{node: string; issue: string}> {
+  const issues: Array<{node: string; issue: string}> = [];
+  
+  const layoutChildren: SceneNode[] = getLayoutChildren(node);
+  
+  if (layoutChildren.length === 1 && isFrameOrGroup(layoutChildren[0])) {
+    const child = layoutChildren[0];
+    
+    if (!canSafelyMerge(node, child)) {
+      const sameDimensions: boolean = dimensionsMatch(node, child);
+      let reason = 'Cannot merge: ';
+      
+      if (hasTransformOrRotation(node) || hasTransformOrRotation(child)) reason += 'transforms/rotation detected, ';
+      if (hasComplexFills(node) || hasComplexFills(child)) reason += 'gradients/images detected, ';
+      if (hasComplexStrokes(node) || hasComplexStrokes(child)) reason += 'complex strokes detected, ';
+      if (hasPrototypeInteractions(node) || hasPrototypeInteractions(child)) reason += 'prototype interactions detected, ';
+      if (hasAdvancedLayoutModes(node) || hasAdvancedLayoutModes(child)) reason += 'advanced layout modes detected, ';
+      
+      if (!fillsAreCompatible(node, child, sameDimensions)) reason += 'incompatible fills, ';
+      if (hasStroke(child) && !sameDimensions) reason += 'child has stroke (different dimensions), ';
+      if (hasEffects(child) && !sameDimensions) reason += 'child has effects (different dimensions), ';
+      if (hasCornerRadius(child) && !sameDimensions) reason += 'child has corner radius (different dimensions), ';
+      if (child.opacity !== 1) reason += 'child has opacity, ';
+      
+      if (reason !== 'Cannot merge: ') {
+        issues.push({
+          node: safeGetNodeName(node),
+          issue: reason.slice(0, -2)
+        });
+      }
+    }
+  }
+  
+  return issues;
 }
 
 function cleanFrames(nodes: readonly SceneNode[]): void {
@@ -1455,11 +1855,6 @@ function cleanFrames(nodes: readonly SceneNode[]): void {
   
   nodes.forEach(node => cleanNode(node));
   
-  figma.ui.postMessage({
-    type: 'cleaning-result',
-    results: cleaningResults
-  });
-  
   const totalFramesRemoved = cleaningResults.framesMerged + cleaningResults.siblingsRemoved;
   
   if (totalFramesRemoved === 0) {
@@ -1467,148 +1862,6 @@ function cleanFrames(nodes: readonly SceneNode[]): void {
   } else {
     figma.notify(`${totalFramesRemoved} frame${totalFramesRemoved !== 1 ? 's' : ''} removed`);
   }
-}
-
-// Core logic functions
-function canBeMerged(node: FrameNode | GroupNode): boolean {
-  if (!isFrameOrGroup(node)) return false;
-  
-  const layoutChildren: SceneNode[] = getLayoutChildren(node);
-  
-  if (layoutChildren.length !== 1) return false;
-  
-  const child = layoutChildren[0];
-  if (!isFrameOrGroup(child)) return false;
-  
-  return canSafelyMerge(node, child);
-}
-
-function canSafelyMerge(parent: FrameNode | GroupNode, child: FrameNode | GroupNode): boolean {
-  const sameDimensions: boolean = dimensionsMatch(parent, child);
-  
-  if (isGroupNode(parent) || isGroupNode(child)) {
-    return false;
-  }
-  
-  if (!hasAutoLayout(parent) || !hasAutoLayout(child)) {
-    return false;
-  }
-  
-  // PHASE 1 CRITICAL SAFETY CHECKS
-  if (hasTransformOrRotation(parent)) {
-    return false;
-  }
-  
-  if (hasComplexFills(parent)) {
-    return false;
-  }
-  
-  if (hasComplexStrokes(parent)) {
-    return false;
-  }
-  
-  if (hasPrototypeInteractions(parent)) {
-    return false;
-  }
-  
-  if (hasAdvancedLayoutModes(parent)) {
-    return false;
-  }
-  
-  if (hasTransformOrRotation(child)) {
-    return false;
-  }
-  
-  if (hasComplexFills(child)) {
-    return false;
-  }
-  
-  if (hasComplexStrokes(child)) {
-    return false;
-  }
-  
-  if (hasPrototypeInteractions(child)) {
-    return false;
-  }
-  
-  if (hasAdvancedLayoutModes(child)) {
-    return false;
-  }
-  
-  // PHASE 3: Child FIXED Sizing Handling
-  if (isFrameNode(child) && hasAutoLayout(child)) {
-    const childHasFixedSizing = child.layoutSizingHorizontal === 'FIXED' || child.layoutSizingVertical === 'FIXED';
-    
-    if (childHasFixedSizing) {
-      const dimensionsCompatible = sameDimensions;
-      
-      const alignmentCompatible = (
-        parent.primaryAxisAlignItems === child.primaryAxisAlignItems &&
-        parent.counterAxisAlignItems === child.counterAxisAlignItems
-      );
-      
-      if (!dimensionsCompatible && !alignmentCompatible) {
-        return false;
-      }
-    }
-  }
-  
-  if (!fillsAreCompatible(parent, child, sameDimensions)) {
-    return false;
-  }
-  
-  if (hasStroke(child) && !sameDimensions) {
-    return false;
-  }
-  if (hasEffects(child) && !sameDimensions) {
-    return false;
-  }
-  if (hasCornerRadius(child) && !sameDimensions) {
-    return false;
-  }
-  if (child.opacity !== 1) {
-    return false;
-  }
-  
-  return true;
-}
-
-function fillsAreCompatible(parent: FrameNode | GroupNode, child: FrameNode | GroupNode, sameDimensions: boolean = false): boolean {
-  const parentFills = ('fills' in parent) ? parent.fills : [];
-  const childFills = ('fills' in child) ? child.fills : [];
-  
-  if (!childFills || !isArrayValue(childFills) || childFills.length === 0) return true;
-  if (!parentFills || !isArrayValue(parentFills) || parentFills.length === 0) return true;
-  if (sameDimensions && childFills && isArrayValue(childFills) && childFills.length > 0) return true;
-  
-  const identical = JSON.stringify(parentFills) === JSON.stringify(childFills);
-  return identical;
-}
-
-function hasStroke(node: FrameNode | GroupNode): boolean {
-  return ('strokes' in node) && node.strokes && isArrayValue(node.strokes) && node.strokes.length > 0;
-}
-
-function hasEffects(node: FrameNode | GroupNode): boolean {
-  return ('effects' in node) && node.effects && isArrayValue(node.effects) && node.effects.length > 0;
-}
-
-function hasCornerRadius(node: FrameNode | GroupNode): boolean {
-  return isFrameNode(node) && 
-         'cornerRadius' in node && 
-         isNumberValue(node.cornerRadius) && 
-         node.cornerRadius > 0;
-}
-
-function hasPaddingOptimization(node: FrameNode | GroupNode): boolean {
-  if (!isFrameNode(node) || !hasAutoLayout(node)) return false;
-  
-  const layoutChildren: SceneNode[] = getLayoutChildren(node);
-  
-  return layoutChildren.length === 1 && 
-         isFrameOrGroup(layoutChildren[0]) && 
-         (node.paddingLeft > 0 || node.paddingRight > 0 || 
-          node.paddingTop > 0 || node.paddingBottom > 0);
 }
 
 function mergeFrame(parentFrame: FrameNode | GroupNode): void {
@@ -1934,63 +2187,4 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
   
   cleaningResults.framesMerged++;
   cleaningResults.paddingOptimized++;
-}
-
-function calculateCombinedPadding(parent: FrameNode | GroupNode, child: FrameNode | GroupNode): CombinedPadding {
-  const parentPadding = {
-    left: isFrameNode(parent) && hasAutoLayout(parent) ? parent.paddingLeft : 0,
-    right: isFrameNode(parent) && hasAutoLayout(parent) ? parent.paddingRight : 0,
-    top: isFrameNode(parent) && hasAutoLayout(parent) ? parent.paddingTop : 0,
-    bottom: isFrameNode(parent) && hasAutoLayout(parent) ? parent.paddingBottom : 0
-  };
-  
-  const childPadding = {
-    left: isFrameNode(child) && hasAutoLayout(child) ? child.paddingLeft : 0,
-    right: isFrameNode(child) && hasAutoLayout(child) ? child.paddingRight : 0,
-    top: isFrameNode(child) && hasAutoLayout(child) ? child.paddingTop : 0,
-    bottom: isFrameNode(child) && hasAutoLayout(child) ? child.paddingBottom : 0
-  };
-  
-  return {
-    left: parentPadding.left + childPadding.left,
-    right: parentPadding.right + childPadding.right,
-    top: parentPadding.top + childPadding.top,
-    bottom: parentPadding.bottom + childPadding.bottom
-  };
-}
-
-function checkForIssues(node: FrameNode | GroupNode): Array<{node: string; issue: string}> {
-  const issues: Array<{node: string; issue: string}> = [];
-  
-  const layoutChildren: SceneNode[] = getLayoutChildren(node);
-  
-  if (layoutChildren.length === 1 && isFrameOrGroup(layoutChildren[0])) {
-    const child = layoutChildren[0];
-    
-    if (!canSafelyMerge(node, child)) {
-      const sameDimensions: boolean = dimensionsMatch(node, child);
-      let reason = 'Cannot merge: ';
-      
-      if (hasTransformOrRotation(node) || hasTransformOrRotation(child)) reason += 'transforms/rotation detected, ';
-      if (hasComplexFills(node) || hasComplexFills(child)) reason += 'gradients/images detected, ';
-      if (hasComplexStrokes(node) || hasComplexStrokes(child)) reason += 'complex strokes detected, ';
-      if (hasPrototypeInteractions(node) || hasPrototypeInteractions(child)) reason += 'prototype interactions detected, ';
-      if (hasAdvancedLayoutModes(node) || hasAdvancedLayoutModes(child)) reason += 'advanced layout modes detected, ';
-      
-      if (!fillsAreCompatible(node, child, sameDimensions)) reason += 'incompatible fills, ';
-      if (hasStroke(child) && !sameDimensions) reason += 'child has stroke (different dimensions), ';
-      if (hasEffects(child) && !sameDimensions) reason += 'child has effects (different dimensions), ';
-      if (hasCornerRadius(child) && !sameDimensions) reason += 'child has corner radius (different dimensions), ';
-      if (child.opacity !== 1) reason += 'child has opacity, ';
-      
-      if (reason !== 'Cannot merge: ') {
-        issues.push({
-          node: safeGetNodeName(node),
-          issue: reason.slice(0, -2)
-        });
-      }
-    }
-  }
-  
-  return issues;
 }

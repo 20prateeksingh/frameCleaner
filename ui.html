@@ -48,71 +48,36 @@
       color: white;
     }
     
-    .value-prop {
-      font-size: 14px;
-      color: #333333;
-      line-height: 1.4;
-      margin-bottom: 24px;
-    }
-    
-    /* Buttons */
-    .button {
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
+    /* Initial Screen */
+    .placeholder-container {
       text-align: center;
-      border: none;
-      width: 100%;
-      margin-bottom: 8px;
+      margin: 24px 0;
     }
     
-    .button.primary {
-      background: #4F46E5;
-      color: #ffffff;
-    }
-    
-    .button.primary:hover:not(:disabled) {
-      background: #4338CA;
-    }
-    
-    .button.secondary {
-      background: #ffffff;
-      color: #4F46E5;
-      border: 2px solid #4F46E5;
-    }
-    
-    .button.secondary:hover:not(:disabled) {
-      background: #f8fafc;
-    }
-    
-    .button:disabled {
-      background: #f5f5f5;
-      color: #999999;
-      border-color: #e5e5e5;
-      cursor: not-allowed;
-    }
-    
-    .button-group {
+    .placeholder-image {
+      width: 200px;
+      height: 120px;
+      background: #f1f5f9;
+      border: 2px dashed #cbd5e1;
+      border-radius: 12px;
       display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-bottom: 24px;
-    }
-    
-    /* Ready Screen */
-    .helper-text {
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      color: #64748b;
       font-size: 11px;
-      color: #666666;
-      text-align: center;
-      margin-bottom: 32px;
     }
     
-    .tertiary-links {
+    .initial-message {
+      font-size: 14px;
+      color: #334155;
+      margin-bottom: 32px;
+      font-weight: 500;
+    }
+    
+    .initial-links {
       text-align: center;
-      margin-top: 32px;
+      margin-top: 48px;
     }
     
     .link {
@@ -129,23 +94,25 @@
     }
     
     /* Analysis Screen */
-    .back-button {
-      position: absolute;
-      top: 16px;
-      left: 16px;
-      background: none;
-      border: none;
-      font-size: 18px;
-      cursor: pointer;
-      color: #666666;
-      padding: 4px;
+    .frame-header {
+      text-align: center;
+      margin-bottom: 24px;
     }
     
-    .back-button:hover {
-      color: #333333;
+    .frame-label {
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 4px;
     }
     
-    .analysis-summary {
+    .frame-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-bottom: 24px;
+    }
+    
+    .stats-container {
       background: #f8fafc;
       border: 1px solid #e2e8f0;
       border-radius: 12px;
@@ -153,99 +120,41 @@
       margin-bottom: 24px;
     }
     
-    .section-title {
-      font-size: 11px;
-      font-weight: 600;
-      color: #334155;
-      margin-bottom: 16px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    
-    .analyzed-frame-name {
-      font-size: 12px;
-      color: #4F46E5;
-      font-weight: 500;
-      margin-bottom: 16px;
-      padding: 8px 12px;
-      background: #F8FAFC;
-      border-radius: 6px;
-      border-left: 3px solid #4F46E5;
-    }
-    
-    .slider-container {
-      margin-bottom: 16px;
-    }
-    
-    .slider-label {
-      font-size: 11px;
-      color: #475569;
-      margin-bottom: 8px;
-    }
-    
-    .slider-track {
-      width: 100%;
-      height: 8px;
-      background: linear-gradient(to right, #10b981 0%, #f59e0b 50%, #ef4444 100%);
-      border-radius: 4px;
-      position: relative;
-      margin-bottom: 8px;
-    }
-    
-    .slider-thumb {
-      width: 16px;
-      height: 16px;
-      background: #ffffff;
-      border: 2px solid #333333;
-      border-radius: 50%;
-      position: absolute;
-      top: -4px;
-      transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    .slider-status {
-      font-size: 11px;
-      font-weight: 500;
-      color: #334155;
-    }
-    
-    .layer-info {
-      margin-top: 16px;
-    }
-    
-    .layer-stat {
-      font-size: 11px;
-      color: #475569;
-      margin-bottom: 8px;
+    .stat-row {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      margin-bottom: 12px;
+      font-size: 12px;
     }
     
-    .expandable-trigger {
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 11px;
-      color: #4F46E5;
-      padding: 0;
+    .stat-row:last-child {
+      margin-bottom: 0;
+    }
+    
+    .stat-label {
+      color: #475569;
+    }
+    
+    .stat-value {
+      color: #1e293b;
+      font-weight: 600;
+    }
+    
+    .removable-container {
+      margin-bottom: 24px;
     }
     
     .removable-list {
-      max-height: 120px;
+      max-height: 200px;
       overflow-y: auto;
       background: #ffffff;
       border: 1px solid #e2e8f0;
-      border-radius: 6px;
-      margin-top: 8px;
+      border-radius: 8px;
     }
     
     .removable-item {
-      padding: 8px 12px;
-      font-size: 11px;
-      color: #334155;
       border-bottom: 1px solid #f1f5f9;
-      cursor: pointer;
       transition: background-color 0.2s ease;
     }
     
@@ -257,144 +166,231 @@
       background: #f8fafc;
     }
     
-    .removable-item.selected {
-      background: #EEF2FF;
-      border-left: 3px solid #4F46E5;
-      padding-left: 9px;
+    .removable-header {
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+
+    .removable-title-container {
+      flex: 1;
+      cursor: pointer;
     }
     
-    .removable-item::before {
-      content: "•";
-      color: #4F46E5;
-      margin-right: 8px;
+    .removable-title {
+      font-size: 12px;
+      color: #1e293b;
+      font-weight: 500;
     }
     
-    /* Results Screen */
-    .celebration {
+    .removable-subtitle {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    .removable-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .target-icon {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .target-icon:hover {
+      opacity: 1;
+    }
+
+    .target-icon svg {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .chevron {
+      font-size: 12px;
+      color: #64748b;
+      transition: transform 0.2s ease;
+      cursor: pointer;
+    }
+    
+    .chevron.expanded {
+      transform: rotate(180deg);
+    }
+    
+    .inheritance-details {
+      padding: 0 16px 12px 16px;
+      background: #f8fafc;
+      border-top: 1px solid #f1f5f9;
+      display: none;
+    }
+    
+    .inheritance-details.expanded {
+      display: block;
+    }
+    
+    .inheritance-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+      font-size: 11px;
+    }
+    
+    .inheritance-label {
+      color: #64748b;
+    }
+    
+    .inheritance-value {
+      color: #1e293b;
+      text-align: right;
+      max-width: 150px;
+      word-break: break-word;
+    }
+    
+    /* Button */
+    .button {
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
       text-align: center;
-      margin: 32px 0;
+      border: none;
+      width: 100%;
+      background: #4F46E5;
+      color: #ffffff;
     }
     
-    .frames-removed {
-      font-size: 24px;
-      font-weight: 700;
+    .button:hover:not(:disabled) {
+      background: #4338CA;
+    }
+    
+    .button:disabled {
+      background: #f5f5f5;
+      color: #999999;
+      cursor: not-allowed;
+    }
+    
+    /* Optimized Screen */
+    .optimized-container {
+      text-align: center;
+      margin: 48px 0;
+    }
+    
+    .optimized-message {
+      font-size: 14px;
       color: #059669;
+      font-weight: 500;
       margin-bottom: 8px;
     }
     
-    .celebration-text {
+    .optimized-subtitle {
       font-size: 12px;
-      color: #334155;
+      color: #64748b;
     }
     
-    .results-slider {
-      margin: 32px 0;
-    }
-    
-    .undo-instruction {
-      text-align: center;
-      margin-top: 16px;
-      font-size: 11px;
-      color: #666666;
-    }
-    
-    /* Fully Optimized */
-    .optimized-message {
-      text-align: center;
-      font-size: 14px;
-      color: #059669;
-      margin: 24px 0;
-      font-weight: 500;
+    /* Loading state */
+    .analyzing {
+      opacity: 0.6;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
-  <!-- Ready Screen -->
-  <div id="ready-screen" class="screen active">
+  <!-- Initial Screen -->
+  <div id="initial-screen" class="screen active">
     <div class="header">
       <div class="logo">F</div>
-      <div class="value-prop">Intelligent auto-layout optimization</div>
     </div>
 
-    <div class="button-group">
-      <button id="analyze-btn" class="button primary" disabled>Analyse</button>
-      <button id="quick-clean-btn" class="button secondary" disabled>Quick Clean</button>
+    <div class="placeholder-container">
+      <div class="placeholder-image">
+        [Placeholder for GIF/Image]
+      </div>
+      <div class="initial-message">Select a frame to get started</div>
     </div>
 
-    <div class="helper-text">Select a Frame to get started</div>
-
-    <div class="tertiary-links">
-      <a href="#" class="link" id="learn-more">Know more</a>
-      <a href="#" class="link" id="report-bug">Found a bug? Report</a>
+    <div class="initial-links">
+      <a href="#" class="link" id="know-more">Know more</a>
+      <a href="#" class="link" id="report-bug">Report a bug</a>
     </div>
   </div>
 
   <!-- Analysis Screen -->
   <div id="analysis-screen" class="screen">
-    <button class="back-button" id="back-btn">←</button>
-    
     <div class="header">
       <div class="logo">F</div>
     </div>
 
-    <div class="analysis-summary">
-      <div class="section-title">Analysis Summary</div>
-      <div class="analyzed-frame-name" id="analyzed-frame-name">Frame: Loading...</div>
-      
-      <div class="slider-container">
-        <div class="slider-label">Layer Structure</div>
-        <div class="slider-track">
-          <div class="slider-thumb" id="analysis-thumb"></div>
-        </div>
-        <div class="slider-status" id="slider-status">Well optimized</div>
+    <div class="frame-header">
+      <div class="frame-label">Frame</div>
+      <div class="frame-name" id="frame-name">Loading...</div>
+    </div>
+
+    <div class="stats-container">
+      <div class="stat-row">
+        <span class="stat-label">Total Frames</span>
+        <span class="stat-value" id="total-frames">0</span>
       </div>
-
-      <button id="optimize-btn" class="button primary">Optimize</button>
-
-      <div class="layer-info">
-        <div class="layer-stat">
-          <span>Total Layers: <span id="total-layers">0</span></span>
-        </div>
-        <div class="layer-stat" id="removable-section">
-          <span>Removable Layers: <span id="removable-count">0</span></span>
-          <button class="expandable-trigger" id="expand-toggle">⌃</button>
-        </div>
-        <div id="removable-list" class="removable-list"></div>
+      <div class="stat-row">
+        <span class="stat-label">Removable Frames</span>
+        <span class="stat-value" id="removable-frames">0</span>
       </div>
     </div>
+
+    <div class="removable-container" id="removable-container">
+      <div class="removable-list" id="removable-list">
+        <!-- Removable items will be populated here -->
+      </div>
+    </div>
+
+    <button id="optimize-btn" class="button">Optimize</button>
   </div>
 
-  <!-- Results Screen -->
-  <div id="results-screen" class="screen">
+  <!-- Optimized Screen -->
+  <div id="optimized-screen" class="screen">
     <div class="header">
       <div class="logo">F</div>
     </div>
 
-    <div class="celebration">
-      <div class="frames-removed" id="frames-removed-count">12 frames removed</div>
+    <div class="frame-header">
+      <div class="frame-label">Frame</div>
+      <div class="frame-name" id="optimized-frame-name">Loading...</div>
     </div>
 
-    <div class="results-slider">
-      <div class="slider-label">Layer Structure</div>
-      <div class="slider-track">
-        <div class="slider-thumb" id="results-thumb"></div>
+    <div class="stats-container">
+      <div class="stat-row">
+        <span class="stat-label">Total Frames</span>
+        <span class="stat-value" id="optimized-total-frames">0</span>
       </div>
-      <div class="slider-status">Well optimized</div>
+      <div class="stat-row">
+        <span class="stat-label">Removable Frames</span>
+        <span class="stat-value">0</span>
+      </div>
     </div>
 
-    <button id="done-btn" class="button primary">Done</button>
-    
-    <div class="undo-instruction">
-      To undo plugin action, use Cmd+Z / Ctrl+Z
+    <div class="optimized-container">
+      <div class="optimized-message">Frame is optimized</div>
+      <div class="optimized-subtitle">Select another frame to continue</div>
     </div>
   </div>
 
   <script>
     // State management
-    let currentScreen = 'ready';
+    let currentScreen = 'initial';
     let analysisData = null;
-    let hasSelection = false;
-    let selectedRemovableIndex = -1;
 
     // Screen management
     function showScreen(screenId) {
@@ -405,248 +401,208 @@
       currentScreen = screenId;
     }
 
-    // Calculate slider position (0-100%)
-    function calculateSliderPosition(percentage) {
-      return Math.min(100, Math.max(0, percentage * 100));
-    }
-
-    // Update slider visual state
-    function updateSlider(thumbElement, percentage) {
-      const position = calculateSliderPosition(percentage);
-      thumbElement.style.left = `calc(${position}% - 8px)`;
-    }
-
-    // Get status text based on percentage
-    function getStatusText(percentage) {
-      if (percentage <= 0.1) return 'Well optimized';
-      return 'Optimization needed';
-    }
-
-    // Update selection state
-    function updateSelectionState(hasSelection, count) {
-      const analyzeBtn = document.getElementById('analyze-btn');
-      const quickCleanBtn = document.getElementById('quick-clean-btn');
-      const helperText = document.querySelector('.helper-text');
-      
-      if (hasSelection) {
-        analyzeBtn.disabled = false;
-        quickCleanBtn.disabled = false;
-        helperText.textContent = `${count} frame${count !== 1 ? 's' : ''} selected`;
-      } else {
-        analyzeBtn.disabled = true;
-        quickCleanBtn.disabled = true;
-        helperText.textContent = 'Select a Frame to get started';
+    // Format inheritance value for display
+    function formatInheritanceValue(key, value) {
+      if (!value || value === '' || value === '0' || value === 'NONE') {
+        return '—';
       }
+      
+      switch (key) {
+        case 'children':
+          return `${value} children`;
+        case 'padding':
+          return value;
+        case 'alignment':
+          return value;
+        case 'sizingMode':
+          return value;
+        case 'itemSpacing':
+          return value;
+        case 'layoutMode':
+          return value;
+        default:
+          return value;
+      }
+    }
+
+    // Create removable item HTML
+    function createRemovableItem(frameInfo, index) {
+      const item = document.createElement('div');
+      item.className = 'removable-item';
+      item.dataset.nodeId = frameInfo.nodeId;
+      item.dataset.index = index;
+
+      const header = document.createElement('div');
+      header.className = 'removable-header';
+      
+      const titleContainer = document.createElement('div');
+      titleContainer.className = 'removable-title-container';
+      
+      const title = document.createElement('div');
+      title.className = 'removable-title';
+      title.textContent = frameInfo.name;
+      titleContainer.appendChild(title);
+      
+      const subtitle = document.createElement('div');
+      subtitle.className = 'removable-subtitle';
+      subtitle.textContent = `To be inherited by ${frameInfo.parentName}`;
+      titleContainer.appendChild(subtitle);
+
+      const actions = document.createElement('div');
+      actions.className = 'removable-actions';
+      
+      // Target icon for locate functionality
+      const targetIcon = document.createElement('div');
+      targetIcon.className = 'target-icon';
+      targetIcon.innerHTML = `
+        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
+          <circle cx="8" cy="8" r="4" stroke="currentColor" stroke-width="1" fill="none"/>
+          <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1" fill="none"/>
+        </svg>
+      `;
+      
+      const chevron = document.createElement('div');
+      chevron.className = 'chevron';
+      chevron.textContent = '▼';
+
+      actions.appendChild(targetIcon);
+      actions.appendChild(chevron);
+      
+      const details = document.createElement('div');
+      details.className = 'inheritance-details';
+      
+      // Create inheritance detail rows
+      const inheritanceKeys = [
+        { key: 'children', label: 'Children' },
+        { key: 'padding', label: 'Padding' },
+        { key: 'alignment', label: 'Alignment' },
+        { key: 'sizingMode', label: 'Sizing Mode' },
+        { key: 'itemSpacing', label: 'Item Spacing' },
+        { key: 'layoutMode', label: 'Layout Mode' }
+      ];
+      
+      inheritanceKeys.forEach(({ key, label }) => {
+        const value = frameInfo.inheritance[key];
+        if (value && value !== '' && value !== '0' && value !== 'NONE') {
+          const row = document.createElement('div');
+          row.className = 'inheritance-row';
+          
+          const labelSpan = document.createElement('span');
+          labelSpan.className = 'inheritance-label';
+          labelSpan.textContent = label;
+          
+          const valueSpan = document.createElement('span');
+          valueSpan.className = 'inheritance-value';
+          valueSpan.textContent = formatInheritanceValue(key, value);
+          
+          row.appendChild(labelSpan);
+          row.appendChild(valueSpan);
+          details.appendChild(row);
+        }
+      });
+      
+      // Add click handler for chevron expansion
+      titleContainer.addEventListener('click', () => {
+        const isExpanded = details.classList.contains('expanded');
+        
+        if (isExpanded) {
+          details.classList.remove('expanded');
+          chevron.classList.remove('expanded');
+        } else {
+          details.classList.add('expanded');
+          chevron.classList.add('expanded');
+        }
+      });
+
+      chevron.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isExpanded = details.classList.contains('expanded');
+        
+        if (isExpanded) {
+          details.classList.remove('expanded');
+          chevron.classList.remove('expanded');
+        } else {
+          details.classList.add('expanded');
+          chevron.classList.add('expanded');
+        }
+      });
+
+      // Add click handler for target icon (locate frame)
+      targetIcon.addEventListener('click', (e) => {
+        e.stopPropagation();
+        parent.postMessage({ 
+          pluginMessage: { 
+            type: 'locate-frame', 
+            nodeId: frameInfo.nodeId 
+          } 
+        }, '*');
+      });
+
+      header.appendChild(titleContainer);
+      header.appendChild(actions);
+      item.appendChild(header);
+      item.appendChild(details);
+      
+      return item;
     }
 
     // Show analysis results
     function showAnalysisResults(results) {
       analysisData = results;
-      selectedRemovableIndex = -1; // Reset selection
-      
-      // Update the analyzed frame name
-      document.getElementById('analyzed-frame-name').textContent = `Frame: ${results.frameName}`;
       
       if (results.removableFrames === 0) {
-        showFullyOptimizedAnalysis(results);
+        showOptimizedScreen(results);
       } else {
         showNormalAnalysis(results);
       }
+    }
+
+    // Show normal analysis with removable frames
+    function showNormalAnalysis(results) {
+      // Update frame name
+      document.getElementById('frame-name').textContent = results.frameName;
+      
+      // Update stats
+      document.getElementById('total-frames').textContent = results.totalFrames;
+      document.getElementById('removable-frames').textContent = results.removableFrames;
+      
+      // Show removable container
+      document.getElementById('removable-container').style.display = 'block';
+      
+      // Populate removable list
+      const list = document.getElementById('removable-list');
+      list.innerHTML = '';
+      
+      results.removableFrameInfos.forEach((frameInfo, index) => {
+        const item = createRemovableItem(frameInfo, index);
+        list.appendChild(item);
+      });
+      
+      // Update optimize button
+      document.getElementById('optimize-btn').textContent = 'Optimize';
+      document.getElementById('optimize-btn').style.display = 'block';
       
       showScreen('analysis');
     }
 
-    // Handle clicking on removable items
-    function selectRemovableItem(index, nodeId) {
-      console.log('Clicking item:', index, 'nodeId:', nodeId);
+    // Show optimized screen
+    function showOptimizedScreen(results) {
+      // Update frame name
+      document.getElementById('optimized-frame-name').textContent = results.frameName;
       
-      // Check if nodeId exists
-      if (!nodeId) {
-        console.error('No nodeId provided for item:', index);
-        return;
-      }
+      // Update stats
+      document.getElementById('optimized-total-frames').textContent = results.totalFrames;
       
-      // Update visual state
-      const allItems = document.querySelectorAll('.removable-item');
-      allItems.forEach(item => item.classList.remove('selected'));
-      
-      const clickedItem = allItems[index];
-      if (clickedItem) {
-        clickedItem.classList.add('selected');
-        selectedRemovableIndex = index;
-        console.log('Updated visual state for item:', index);
-      }
-      
-      // Send selection message to plugin
-      console.log('Sending select-and-zoom message with nodeId:', nodeId);
-      parent.postMessage({ 
-        pluginMessage: { 
-          type: 'select-and-zoom', 
-          nodeId: nodeId 
-        } 
-      }, '*');
-    }
-
-    function showNormalAnalysis(results) {
-      const percentage = results.removableFrames / results.totalFrames;
-      
-      // Update slider
-      const thumb = document.getElementById('analysis-thumb');
-      updateSlider(thumb, percentage);
-      
-      // Update status
-      document.getElementById('slider-status').textContent = getStatusText(percentage);
-      
-      // Update layer counts
-      document.getElementById('total-layers').textContent = results.totalFrames;
-      document.getElementById('removable-count').textContent = results.removableFrames;
-      
-      // Show removable section
-      document.getElementById('removable-section').style.display = 'flex';
-      
-      // Remove any existing optimized message
-      const existingMessage = document.querySelector('.optimized-message');
-      if (existingMessage) {
-        existingMessage.remove();
-      }
-      
-      // Populate removable list and show it expanded
-      const list = document.getElementById('removable-list');
-      list.innerHTML = '';
-      results.removableFrameNames.forEach((name, index) => {
-        const item = document.createElement('div');
-        item.className = 'removable-item';
-        item.textContent = name;
-        
-        // Check if removableNodeIds exists and has the right length
-        if (results.removableNodeIds && results.removableNodeIds[index]) {
-          item.dataset.nodeId = results.removableNodeIds[index];
-          item.dataset.index = index.toString();
-          item.addEventListener('click', () => selectRemovableItem(index, results.removableNodeIds[index]));
-          console.log('Added click listener for item:', name, 'with nodeId:', results.removableNodeIds[index]);
-        } else {
-          console.error('Missing nodeId for item:', name, 'at index:', index);
-          console.log('Available nodeIds:', results.removableNodeIds);
-        }
-        
-        list.appendChild(item);
-      });
-      
-      // Show list expanded (not collapsed)
-      list.style.display = 'block';
-      document.getElementById('expand-toggle').textContent = '⌃';
-      
-      // Update optimize button
-      document.getElementById('optimize-btn').textContent = 'Optimize';
-    }
-
-    function showFullyOptimizedAnalysis(results) {
-      const thumb = document.getElementById('analysis-thumb');
-      updateSlider(thumb, 0);
-      
-      document.getElementById('slider-status').textContent = 'Well optimized';
-      document.getElementById('total-layers').textContent = results.totalFrames;
-      
-      // Hide removable section completely
-      document.getElementById('removable-section').style.display = 'none';
-      
-      // CRITICAL: Clear the removable list content to prevent old data from showing
-      const list = document.getElementById('removable-list');
-      list.innerHTML = '';
-      list.style.display = 'none';
-      
-      // Reset selection state
-      selectedRemovableIndex = -1;
-      
-      // Reset the toggle button state
-      document.getElementById('expand-toggle').textContent = '⌄';
-      
-      // Remove any existing optimized message first
-      const existingMessage = document.querySelector('.optimized-message');
-      if (existingMessage) {
-        existingMessage.remove();
-      }
-      
-      // Add optimized message
-      const layerInfo = document.querySelector('.layer-info');
-      const message = document.createElement('div');
-      message.className = 'optimized-message';
-      message.textContent = 'Your layers are fully optimized!';
-      layerInfo.appendChild(message);
-      
-      // Update button
-      document.getElementById('optimize-btn').textContent = 'Done';
-    }
-
-    // Show cleaning results
-    function showCleaningResults(results) {
-      if (results.message) {
-        alert(results.message);
-        return;
-      }
-
-      const totalFramesRemoved = (results.framesMerged || 0) + (results.siblingsRemoved || 0);
-      
-      if (totalFramesRemoved === 0) {
-        document.getElementById('frames-removed-count').textContent = 'Your layers are fully optimized!';
-        document.getElementById('frames-removed-count').style.fontSize = '18px';
-      } else {
-        document.getElementById('frames-removed-count').textContent = 
-          `${totalFramesRemoved} frame${totalFramesRemoved !== 1 ? 's' : ''} removed`;
-        document.getElementById('frames-removed-count').style.fontSize = '24px';
-      }
-      
-      const resultsThumb = document.getElementById('results-thumb');
-      if (analysisData) {
-        const startPercentage = analysisData.removableFrames / analysisData.totalFrames;
-        updateSlider(resultsThumb, startPercentage);
-        setTimeout(() => updateSlider(resultsThumb, 0), 500);
-      } else {
-        updateSlider(resultsThumb, 0);
-      }
-      
-      showScreen('results');
+      showScreen('optimized');
     }
 
     // Event listeners
-    document.getElementById('analyze-btn').addEventListener('click', () => {
-      parent.postMessage({ pluginMessage: { type: 'analyze-selection' } }, '*');
-    });
-
-    document.getElementById('quick-clean-btn').addEventListener('click', () => {
-      parent.postMessage({ pluginMessage: { type: 'clean-selection' } }, '*');
-    });
-
     document.getElementById('optimize-btn').addEventListener('click', () => {
-      if (analysisData && analysisData.removableFrames === 0) {
-        showScreen('ready');
-      } else {
-        parent.postMessage({ pluginMessage: { type: 'clean-selection' } }, '*');
-      }
+      parent.postMessage({ pluginMessage: { type: 'optimize' } }, '*');
     });
 
-    document.getElementById('back-btn').addEventListener('click', () => {
-      showScreen('ready');
-    });
-
-    document.getElementById('done-btn').addEventListener('click', () => {
-      showScreen('ready');
-    });
-
-    document.getElementById('expand-toggle').addEventListener('click', () => {
-      const list = document.getElementById('removable-list');
-      const toggle = document.getElementById('expand-toggle');
-      
-      if (list.style.display === 'none') {
-        list.style.display = 'block';
-        toggle.textContent = '⌃';
-      } else {
-        list.style.display = 'none';
-        toggle.textContent = '⌄';
-      }
-    });
-
-    document.getElementById('learn-more').addEventListener('click', (e) => {
+    document.getElementById('know-more').addEventListener('click', (e) => {
       e.preventDefault();
       alert('Learn more functionality coming soon!');
     });
@@ -661,22 +617,20 @@
       const message = event.data.pluginMessage;
       
       if (message.type === 'selection-changed') {
-        hasSelection = message.hasSelection;
-        updateSelectionState(message.hasSelection, message.selectionCount);
-        
-        // Navigate back to ready screen when selection changes on results screen
-        if (currentScreen === 'results') {
-          showScreen('ready');
+        if (!message.hasSelection) {
+          // Go back to initial screen when nothing is selected
+          showScreen('initial');
+          analysisData = null;
         }
       } else if (message.type === 'analysis-result') {
-        showAnalysisResults(message.results);
-      } else if (message.type === 'cleaning-result') {
-        showCleaningResults(message.results);
+        if (message.hasSelection && message.results) {
+          showAnalysisResults(message.results);
+        }
       }
     };
 
     // Initialize
-    updateSelectionState(false, 0);
+    showScreen('initial');
   </script>
 </body>
 </html>
