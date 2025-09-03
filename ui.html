@@ -257,6 +257,12 @@
       background: #f8fafc;
     }
     
+    .removable-item.selected {
+      background: #EEF2FF;
+      border-left: 3px solid #4F46E5;
+      padding-left: 9px;
+    }
+    
     .removable-item::before {
       content: "•";
       color: #4F46E5;
@@ -388,6 +394,7 @@
     let currentScreen = 'ready';
     let analysisData = null;
     let hasSelection = false;
+    let selectedRemovableIndex = -1;
 
     // Screen management
     function showScreen(screenId) {
@@ -435,6 +442,7 @@
     // Show analysis results
     function showAnalysisResults(results) {
       analysisData = results;
+      selectedRemovableIndex = -1; // Reset selection
       
       // Update the analyzed frame name
       document.getElementById('analyzed-frame-name').textContent = `Frame: ${results.frameName}`;
@@ -446,6 +454,37 @@
       }
       
       showScreen('analysis');
+    }
+
+    // Handle clicking on removable items
+    function selectRemovableItem(index, nodeId) {
+      console.log('Clicking item:', index, 'nodeId:', nodeId);
+      
+      // Check if nodeId exists
+      if (!nodeId) {
+        console.error('No nodeId provided for item:', index);
+        return;
+      }
+      
+      // Update visual state
+      const allItems = document.querySelectorAll('.removable-item');
+      allItems.forEach(item => item.classList.remove('selected'));
+      
+      const clickedItem = allItems[index];
+      if (clickedItem) {
+        clickedItem.classList.add('selected');
+        selectedRemovableIndex = index;
+        console.log('Updated visual state for item:', index);
+      }
+      
+      // Send selection message to plugin
+      console.log('Sending select-and-zoom message with nodeId:', nodeId);
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'select-and-zoom', 
+          nodeId: nodeId 
+        } 
+      }, '*');
     }
 
     function showNormalAnalysis(results) {
@@ -474,10 +513,22 @@
       // Populate removable list and show it expanded
       const list = document.getElementById('removable-list');
       list.innerHTML = '';
-      results.removableFrameNames.forEach(name => {
+      results.removableFrameNames.forEach((name, index) => {
         const item = document.createElement('div');
         item.className = 'removable-item';
         item.textContent = name;
+        
+        // Check if removableNodeIds exists and has the right length
+        if (results.removableNodeIds && results.removableNodeIds[index]) {
+          item.dataset.nodeId = results.removableNodeIds[index];
+          item.dataset.index = index.toString();
+          item.addEventListener('click', () => selectRemovableItem(index, results.removableNodeIds[index]));
+          console.log('Added click listener for item:', name, 'with nodeId:', results.removableNodeIds[index]);
+        } else {
+          console.error('Missing nodeId for item:', name, 'at index:', index);
+          console.log('Available nodeIds:', results.removableNodeIds);
+        }
+        
         list.appendChild(item);
       });
       
@@ -503,6 +554,9 @@
       const list = document.getElementById('removable-list');
       list.innerHTML = '';
       list.style.display = 'none';
+      
+      // Reset selection state
+      selectedRemovableIndex = -1;
       
       // Reset the toggle button state
       document.getElementById('expand-toggle').textContent = '⌄';

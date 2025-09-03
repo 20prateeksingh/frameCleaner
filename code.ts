@@ -1,6 +1,6 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Complete TypeScript with Enhanced Critical Safety Checks
+// Frame Cleaner Plugin - Complete TypeScript with Enhanced Critical Safety Checks and Select-and-Zoom Feature
 // Optimizes auto-layout structures by merging unnecessary nested frames and selectively dissolving compatible siblings
 // Features: Layout sizing inheritance, selective sibling dissolution with full→partial hierarchy, cross-direction padding validation
 // V1 ENHANCED: Critical safety checks for transforms, gradients, images, prototype interactions, wrap mode, baseline alignment
@@ -25,6 +25,7 @@ interface AnalysisResults {
   paddingOptimizations: number;
   removableFrames: number;
   removableFrameNames: string[];
+  removableNodeIds: string[];
   frameName: string;
   frameId: string;
   issues: Array<{
@@ -49,6 +50,7 @@ interface CrossDirectionPadding {
 
 interface UIMessage {
   type: string;
+  nodeId?: string;
   settings?: {
     removeSingleChild?: boolean;
   };
@@ -551,7 +553,9 @@ function shouldInheritAlignment(parentSizing: string, childSizing: string, axis:
 }
 
 // Initialize plugin
-figma.showUI(__html__, { width: 350, height: 450 });
+figma.showUI(__html__, { width: 350, height: 500 });
+
+console.log('Plugin initialized, setting up message handler');
 
 let cleaningResults: CleaningResults = {
   framesAnalyzed: 0,
@@ -588,6 +592,8 @@ setTimeout((): void => {
 
 // Message handler
 figma.ui.onmessage = (msg: UIMessage): void => {
+  console.log('Received message:', msg);
+  
   switch (msg.type) {
     case 'analyze-selection':
       analyzeSelection();
@@ -601,8 +607,64 @@ figma.ui.onmessage = (msg: UIMessage): void => {
     case 'clean-page':
       cleanPage();
       break;
+    case 'select-and-zoom':
+      console.log('Handling select-and-zoom for nodeId:', msg.nodeId);
+      figma.notify(`Debug: Received select message for ${msg.nodeId}`);
+      if (msg.nodeId) {
+        selectAndZoomToNode(msg.nodeId);
+      } else {
+        console.error('No nodeId provided in select-and-zoom message');
+        figma.notify("Frame not found");
+      }
+      break;
+    default:
+      console.log('Unknown message type:', msg.type);
   }
 };
+
+// Select and zoom to node function
+function selectAndZoomToNode(nodeId: string): void {
+  console.log('selectAndZoomToNode called with nodeId:', nodeId);
+  
+  if (!nodeId) {
+    console.error('No nodeId provided');
+    figma.notify("Frame not found");
+    return;
+  }
+  
+  try {
+    console.log('Attempting to get node by ID:', nodeId);
+    const node = figma.getNodeById(nodeId);
+    
+    console.log('Node found:', node);
+    
+    if (!node || !nodeExists(node)) {
+      console.error('Node not found or removed:', nodeId);
+      figma.notify("Frame not found");
+      return;
+    }
+    
+    console.log('Node exists, attempting to select and zoom');
+    console.log('Node details:', {
+      id: node.id,
+      name: safeGetNodeName(node),
+      type: node.type,
+      removed: node.removed
+    });
+    
+    // Select the node
+    figma.currentPage.selection = [node as SceneNode];
+    console.log('Selection set, current selection:', figma.currentPage.selection.map(n => n.name));
+    
+    // Zoom to the node
+    figma.viewport.scrollAndZoomIntoView([node as SceneNode]);
+    console.log('Zoom completed');
+    
+  } catch (error) {
+    console.error('Error in selectAndZoomToNode:', error);
+    figma.notify("Frame not found");
+  }
+}
 
 // Helper functions for absolute positioning support
 function getLayoutChildren(node: FrameNode | GroupNode): SceneNode[] {
@@ -1251,6 +1313,7 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
     paddingOptimizations: 0,
     removableFrames: 0,
     removableFrameNames: [],
+    removableNodeIds: [],
     frameName: '',
     frameId: '',
     issues: []
@@ -1268,6 +1331,7 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
         results.mergeableFrames++;
         results.removableFrames++;
         results.removableFrameNames.push(safeGetNodeName(node));
+        results.removableNodeIds.push(node.id);
       }
       
       if (isFrameNode(node) && hasAutoLayout(node) && nodeExists(node)) {
@@ -1281,6 +1345,7 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
               if (nodeExists(sibling)) {
                 results.removableFrames++;
                 results.removableFrameNames.push(safeGetNodeName(sibling));
+                results.removableNodeIds.push(sibling.id);
               }
             });
           } else {
@@ -1293,6 +1358,7 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
                 }
                 results.removableFrames++;
                 results.removableFrameNames.push(safeGetNodeName(sibling));
+                results.removableNodeIds.push(sibling.id);
               }
             });
           }
