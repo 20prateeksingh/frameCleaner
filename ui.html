@@ -274,6 +274,13 @@
       margin: 32px 0;
     }
     
+    .undo-instruction {
+      text-align: center;
+      margin-top: 16px;
+      font-size: 11px;
+      color: #666666;
+    }
+    
     /* Fully Optimized */
     .optimized-message {
       text-align: center;
@@ -332,9 +339,9 @@
         </div>
         <div class="layer-stat" id="removable-section">
           <span>Removable Layers: <span id="removable-count">0</span></span>
-          <button class="expandable-trigger" id="expand-toggle">⌄</button>
+          <button class="expandable-trigger" id="expand-toggle">⌃</button>
         </div>
-        <div id="removable-list" class="removable-list" style="display: none;"></div>
+        <div id="removable-list" class="removable-list"></div>
       </div>
     </div>
   </div>
@@ -358,6 +365,10 @@
     </div>
 
     <button id="done-btn" class="button primary">Done</button>
+    
+    <div class="undo-instruction">
+      To undo plugin action, use Cmd+Z / Ctrl+Z
+    </div>
   </div>
 
   <script>
@@ -439,7 +450,13 @@
       // Show removable section
       document.getElementById('removable-section').style.display = 'flex';
       
-      // Populate removable list
+      // Remove any existing optimized message
+      const existingMessage = document.querySelector('.optimized-message');
+      if (existingMessage) {
+        existingMessage.remove();
+      }
+      
+      // Populate removable list and show it expanded
       const list = document.getElementById('removable-list');
       list.innerHTML = '';
       results.removableFrameNames.forEach(name => {
@@ -448,6 +465,10 @@
         item.textContent = name;
         list.appendChild(item);
       });
+      
+      // Show list expanded (not collapsed)
+      list.style.display = 'block';
+      document.getElementById('expand-toggle').textContent = '⌃';
       
       // Update optimize button
       document.getElementById('optimize-btn').textContent = 'Optimize';
@@ -460,17 +481,29 @@
       document.getElementById('slider-status').textContent = 'Well optimized';
       document.getElementById('total-layers').textContent = results.totalFrames;
       
-      // Hide removable section
+      // Hide removable section completely
       document.getElementById('removable-section').style.display = 'none';
+      
+      // CRITICAL: Clear the removable list content to prevent old data from showing
+      const list = document.getElementById('removable-list');
+      list.innerHTML = '';
+      list.style.display = 'none';
+      
+      // Reset the toggle button state
+      document.getElementById('expand-toggle').textContent = '⌄';
+      
+      // Remove any existing optimized message first
+      const existingMessage = document.querySelector('.optimized-message');
+      if (existingMessage) {
+        existingMessage.remove();
+      }
       
       // Add optimized message
       const layerInfo = document.querySelector('.layer-info');
-      if (!document.querySelector('.optimized-message')) {
-        const message = document.createElement('div');
-        message.className = 'optimized-message';
-        message.textContent = 'Your layers are fully optimized!';
-        layerInfo.appendChild(message);
-      }
+      const message = document.createElement('div');
+      message.className = 'optimized-message';
+      message.textContent = 'Your layers are fully optimized!';
+      layerInfo.appendChild(message);
       
       // Update button
       document.getElementById('optimize-btn').textContent = 'Done';
@@ -479,26 +512,26 @@
     // Show cleaning results
     function showCleaningResults(results) {
       if (results.message) {
-        // Handle error case
         alert(results.message);
         return;
       }
 
-      const framesRemoved = results.siblingsRemoved;
-      document.getElementById('frames-removed-count').textContent = 
-        `${framesRemoved} frame${framesRemoved !== 1 ? 's' : ''} removed`;
+      const totalFramesRemoved = (results.framesMerged || 0) + (results.siblingsRemoved || 0);
       
-      // Animate slider to green
+      if (totalFramesRemoved === 0) {
+        document.getElementById('frames-removed-count').textContent = 'Your layers are fully optimized!';
+        document.getElementById('frames-removed-count').style.fontSize = '18px';
+      } else {
+        document.getElementById('frames-removed-count').textContent = 
+          `${totalFramesRemoved} frame${totalFramesRemoved !== 1 ? 's' : ''} removed`;
+        document.getElementById('frames-removed-count').style.fontSize = '24px';
+      }
+      
       const resultsThumb = document.getElementById('results-thumb');
-      // Start from previous position if we have analysis data
       if (analysisData) {
         const startPercentage = analysisData.removableFrames / analysisData.totalFrames;
         updateSlider(resultsThumb, startPercentage);
-        
-        // Animate to green after a brief delay
-        setTimeout(() => {
-          updateSlider(resultsThumb, 0);
-        }, 500);
+        setTimeout(() => updateSlider(resultsThumb, 0), 500);
       } else {
         updateSlider(resultsThumb, 0);
       }
@@ -517,10 +550,8 @@
 
     document.getElementById('optimize-btn').addEventListener('click', () => {
       if (analysisData && analysisData.removableFrames === 0) {
-        // Fully optimized, go back to ready
         showScreen('ready');
       } else {
-        // Run optimization
         parent.postMessage({ pluginMessage: { type: 'clean-selection' } }, '*');
       }
     });
@@ -546,7 +577,6 @@
       }
     });
 
-    // Placeholder for tertiary links
     document.getElementById('learn-more').addEventListener('click', (e) => {
       e.preventDefault();
       alert('Learn more functionality coming soon!');
@@ -564,6 +594,11 @@
       if (message.type === 'selection-changed') {
         hasSelection = message.hasSelection;
         updateSelectionState(message.hasSelection, message.selectionCount);
+        
+        // Navigate back to ready screen when selection changes on results screen
+        if (currentScreen === 'results') {
+          showScreen('ready');
+        }
       } else if (message.type === 'analysis-result') {
         showAnalysisResults(message.results);
       } else if (message.type === 'cleaning-result') {

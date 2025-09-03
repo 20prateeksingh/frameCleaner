@@ -78,7 +78,11 @@ function isArrayValue<T>(value: readonly T[] | symbol): value is readonly T[] {
   return Array.isArray(value);
 }
 
-function isNumberValue(value: number | symbol): value is number {
+function isNumberValue(value: number | symbol | unknown): value is number {
+  return typeof value === 'number';
+}
+
+function isUnknownNumberValue(value: unknown): value is number {
   return typeof value === 'number';
 }
 
@@ -98,14 +102,14 @@ function hasTransformOrRotation(node: FrameNode | GroupNode): boolean {
       return true;
     }
     
-    // Check for skew transforms - handle unknown type properly
-    if ('skewX' in node && typeof node.skewX === 'number' && Math.abs(node.skewX) > 0.001) {
-      console.log(`❌ Node "${safeGetNodeName(node)}" has skewX: ${node.skewX}`);
+    // Check for skew transforms
+    if ('skewX' in node && isUnknownNumberValue((node as any).skewX) && Math.abs((node as any).skewX) > 0.001) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has skewX: ${(node as any).skewX}`);
       return true;
     }
     
-    if ('skewY' in node && typeof node.skewY === 'number' && Math.abs(node.skewY) > 0.001) {
-      console.log(`❌ Node "${safeGetNodeName(node)}" has skewY: ${node.skewY}`);
+    if ('skewY' in node && isUnknownNumberValue((node as any).skewY) && Math.abs((node as any).skewY) > 0.001) {
+      console.log(`❌ Node "${safeGetNodeName(node)}" has skewY: ${(node as any).skewY}`);
       return true;
     }
     
@@ -1531,42 +1535,55 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
   };
   
   function analyzeNode(node: SceneNode): void {
+    if (!nodeExists(node)) return;
+    
+    // Skip component nodes completely (same as cleaning logic)
+    if (node.type === 'COMPONENT') return;
+    
     if (isFrameOrGroup(node)) {
       results.totalFrames++;
       
       // Check if this frame can be merged with its single child
-      if (canBeMerged(node)) {
+      // Use EXACT same logic as cleaning
+      if (canBeMerged(node) && nodeExists(node)) {
+        console.log(`Analysis: Found mergeable frame "${safeGetNodeName(node)}"`);
         results.mergeableFrames++;
         results.removableFrames++;
         results.removableFrameNames.push(safeGetNodeName(node));
       }
       
-      // Check for optimizable siblings (enhanced approach: full vs partial)
-      if (isFrameNode(node) && hasAutoLayout(node)) {
+      // Check for optimizable siblings using EXACT same logic as cleaning
+      if (isFrameNode(node) && hasAutoLayout(node) && nodeExists(node)) {
         const layoutChildren = getLayoutChildren(node);
-        const siblingFrames = layoutChildren.filter(child => isFrameNode(child)) as FrameNode[];
+        const siblingFrames = layoutChildren.filter(child => isFrameNode(child) && nodeExists(child)) as FrameNode[];
         
-        // Check for full dissolution potential
-        if (canAllSiblingsBeDissolvedTogether(node)) {
-          results.optimizableSiblingGroups++;
-          // Add all siblings to removable list for full dissolution
-          siblingFrames.forEach(sibling => {
-            results.removableFrames++;
-            results.removableFrameNames.push(safeGetNodeName(sibling));
-          });
-        } else {
-          // Check for partial dissolution potential (padding:0 only)
-          let hasPartialOptimization = false;
-          siblingFrames.forEach(sibling => {
-            if (canSiblingBeDissolvedSelectively(sibling, node, true)) {
-              if (!hasPartialOptimization) {
-                results.optimizableSiblingGroups++;
-                hasPartialOptimization = true;
+        if (siblingFrames.length > 0) {
+          // Check for full dissolution potential (EXACT same function as cleaning)
+          if (canAllSiblingsBeDissolvedTogether(node)) {
+            console.log(`Analysis: Found full dissolution opportunity in "${safeGetNodeName(node)}"`);
+            results.optimizableSiblingGroups++;
+            // Add all siblings to removable list for full dissolution
+            siblingFrames.forEach(sibling => {
+              if (nodeExists(sibling)) {
+                results.removableFrames++;
+                results.removableFrameNames.push(safeGetNodeName(sibling));
               }
-              results.removableFrames++;
-              results.removableFrameNames.push(safeGetNodeName(sibling));
-            }
-          });
+            });
+          } else {
+            // Check for partial dissolution potential using EXACT same logic as cleaning
+            let hasPartialOptimization = false;
+            siblingFrames.forEach(sibling => {
+              if (nodeExists(sibling) && canSiblingBeDissolvedSelectively(sibling, node, true)) {
+                if (!hasPartialOptimization) {
+                  console.log(`Analysis: Found partial dissolution opportunity in "${safeGetNodeName(node)}"`);
+                  results.optimizableSiblingGroups++;
+                  hasPartialOptimization = true;
+                }
+                results.removableFrames++;
+                results.removableFrameNames.push(safeGetNodeName(sibling));
+              }
+            });
+          }
         }
       }
       
@@ -1577,13 +1594,36 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
       const issues = checkForIssues(node);
       results.issues.push(...issues);
       
-      if (hasChildren(node)) {
-        node.children.forEach(child => analyzeNode(child));
+      // Recursively analyze children (with safety checks)
+      if (hasChildren(node) && nodeExists(node)) {
+        try {
+          const childrenCopy = [...node.children];
+          const existingChildren = childrenCopy.filter(child => nodeExists(child));
+          
+          existingChildren.forEach(child => {
+            if (nodeExists(child)) {
+              analyzeNode(child);
+            }
+          });
+        } catch (error) {
+          console.warn(`Error analyzing children of "${safeGetNodeName(node)}":`, error);
+        }
       }
     }
   }
   
-  nodes.forEach(node => analyzeNode(node));
+  // Analyze each node with safety checks
+  nodes.forEach(node => {
+    if (nodeExists(node)) {
+      try {
+        analyzeNode(node);
+      } catch (error) {
+        console.warn(`Error analyzing node "${safeGetNodeName(node)}":`, error);
+      }
+    }
+  });
+  
+  console.log(`Analysis complete: ${results.removableFrames} removable frames found`);
   return results;
 }
 
