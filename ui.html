@@ -162,6 +162,17 @@
       letter-spacing: 0.5px;
     }
     
+    .analyzed-frame-name {
+      font-size: 12px;
+      color: #4F46E5;
+      font-weight: 500;
+      margin-bottom: 16px;
+      padding: 8px 12px;
+      background: #F8FAFC;
+      border-radius: 6px;
+      border-left: 3px solid #4F46E5;
+    }
+    
     .slider-container {
       margin-bottom: 16px;
     }
@@ -322,6 +333,7 @@
 
     <div class="analysis-summary">
       <div class="section-title">Analysis Summary</div>
+      <div class="analyzed-frame-name" id="analyzed-frame-name">Frame: Loading...</div>
       
       <div class="slider-container">
         <div class="slider-label">Layer Structure</div>
@@ -423,6 +435,9 @@
     // Show analysis results
     function showAnalysisResults(results) {
       analysisData = results;
+      
+      // Update the analyzed frame name
+      document.getElementById('analyzed-frame-name').textContent = `Frame: ${results.frameName}`;
       
       if (results.removableFrames === 0) {
         showFullyOptimizedAnalysis(results);
