@@ -2,6 +2,7 @@
 
 // Frame Cleaner Plugin - Streamlined Auto-Analysis Version
 // Features: Real-time analysis on selection change, inheritance details, multi-frame support
+// Updated: Improved sibling dissolution logic for cross-axis padding
 
 // Type definitions
 interface CleaningResults {
@@ -363,6 +364,50 @@ function dimensionsMatch(parent: FrameNode | GroupNode, child: FrameNode | Group
   } catch (error) {
     return false;
   }
+}
+
+// NEW: Enhanced padding helper functions for improved sibling dissolution
+function getMainAxisPadding(frame: FrameNode, parentLayoutMode: string): {start: number, end: number} {
+  if (!hasAutoLayout(frame)) {
+    return { start: 0, end: 0 };
+  }
+  
+  if (parentLayoutMode === 'HORIZONTAL') {
+    return { start: frame.paddingLeft, end: frame.paddingRight };
+  } else if (parentLayoutMode === 'VERTICAL') {
+    return { start: frame.paddingTop, end: frame.paddingBottom };
+  }
+  
+  return { start: 0, end: 0 };
+}
+
+function siblingsHaveZeroMainAxisPadding(siblings: FrameNode[], parentLayoutMode: string): boolean {
+  return siblings.every(sibling => {
+    if (!nodeExists(sibling) || !hasAutoLayout(sibling)) return true;
+    
+    const mainPadding = getMainAxisPadding(sibling, parentLayoutMode);
+    return mainPadding.start === 0 && mainPadding.end === 0;
+  });
+}
+
+function siblingsHaveIdenticalCrossAxisPadding(siblings: FrameNode[], parentLayoutMode: string): boolean {
+  if (siblings.length === 0) return true;
+  
+  // Find first sibling with auto layout to establish reference
+  const referenceSibling = siblings.find(sibling => nodeExists(sibling) && hasAutoLayout(sibling));
+  if (!referenceSibling) return true;
+  
+  const referenceCrossPadding = getCrossDirectionPadding(referenceSibling, parentLayoutMode);
+  
+  return siblings.every(sibling => {
+    if (!nodeExists(sibling) || !hasAutoLayout(sibling)) return true;
+    
+    const crossPadding = getCrossDirectionPadding(sibling, parentLayoutMode);
+    return crossPadding.top === referenceCrossPadding.top &&
+           crossPadding.bottom === referenceCrossPadding.bottom &&
+           crossPadding.left === referenceCrossPadding.left &&
+           crossPadding.right === referenceCrossPadding.right;
+  });
 }
 
 // Inheritance detail calculation functions
@@ -930,6 +975,7 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode,
   return true;
 }
 
+// UPDATED: Enhanced sibling dissolution validation with improved padding logic
 function canAllSiblingsBeDissolvedTogether(parentFrame: FrameNode): boolean {
   if (!nodeExists(parentFrame) || !hasAutoLayout(parentFrame)) return false;
   
@@ -938,14 +984,16 @@ function canAllSiblingsBeDissolvedTogether(parentFrame: FrameNode): boolean {
   
   if (siblingFrames.length === 0) return false;
   
-  for (const sibling of siblingFrames) {
-    if (!nodeExists(sibling)) {
-      return false;
-    }
-    
-    if (!siblingHasZeroPadding(sibling)) {
-      return false;
-    }
+  const parentLayoutMode = parentFrame.layoutMode;
+  
+  // NEW: Check for zero main-axis padding across all siblings
+  if (!siblingsHaveZeroMainAxisPadding(siblingFrames, parentLayoutMode)) {
+    return false;
+  }
+  
+  // NEW: Check for identical cross-axis padding across all siblings
+  if (!siblingsHaveIdenticalCrossAxisPadding(siblingFrames, parentLayoutMode)) {
+    return false;
   }
   
   if (!siblingsHaveIdenticalAlignment(siblingFrames)) {
@@ -1183,7 +1231,7 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
 }
 
 // Initialize plugin
-figma.showUI(__html__, { width: 350, height: 600 });
+figma.showUI(__html__, { width: 350, height: 450 });
 
 console.log('Frame Cleaner Plugin - Streamlined Version initialized');
 
