@@ -1,6 +1,6 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Streamlined Auto-Analysis Version
+// Frame Cleaner Plugin - Tranche 1: Constraint Refactoring & Safety Fixes
 // Features: Real-time analysis on selection change, inheritance details, multi-frame support
 
 // Type definitions
@@ -107,11 +107,129 @@ function isStringValue(value: string | symbol): value is string {
   return typeof value === 'string';
 }
 
-// PHASE 1 CRITICAL SAFETY CHECKS
-function hasTransformOrRotation(node: FrameNode | GroupNode): boolean {
+// TRANCHE 3: Enhanced fill and style ID helper functions
+
+// Get resolved color from a fill, accounting for styleIDs
+function getResolvedFillColor(fill: Paint): { r: number; g: number; b: number } | null {
   try {
-    if (!nodeExists(node)) return false;
+    if (fill.type === 'SOLID' && fill.visible !== false) {
+      return fill.color;
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Get all resolved colors from a node's fills
+function getResolvedFillColors(node: FrameNode | GroupNode): Array<{ r: number; g: number; b: number }> {
+  const colors: Array<{ r: number; g: number; b: number }> = [];
+  
+  try {
+    if (!('fills' in node) || !isArrayValue(node.fills)) return colors;
     
+    for (const fill of node.fills) {
+      const color = getResolvedFillColor(fill);
+      if (color) {
+        colors.push(color);
+      }
+    }
+  } catch (error) {
+    // Silent fail
+  }
+  
+  return colors;
+}
+
+// Check if two colors match (with small tolerance for floating point)
+function colorsMatch(color1: { r: number; g: number; b: number }, color2: { r: number; g: number; b: number }): boolean {
+  const tolerance = 0.001;
+  return Math.abs(color1.r - color2.r) < tolerance &&
+         Math.abs(color1.g - color2.g) < tolerance &&
+         Math.abs(color1.b - color2.b) < tolerance;
+}
+
+// Check if arrays of colors match
+function colorArraysMatch(colors1: Array<{ r: number; g: number; b: number }>, colors2: Array<{ r: number; g: number; b: number }>): boolean {
+  if (colors1.length !== colors2.length) return false;
+  
+  for (let i = 0; i < colors1.length; i++) {
+    if (!colorsMatch(colors1[i], colors2[i])) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+// TRANCHE 3: Additional helper functions for style ID resolution
+function getStyleResolvedColor(styleId: string): { r: number; g: number; b: number } | null {
+  try {
+    const style = figma.getStyleById(styleId);
+    if (style && style.type === 'PAINT' && style.paints && style.paints.length > 0) {
+      const paint = style.paints[0];
+      if (paint.type === 'SOLID') {
+        return paint.color;
+      }
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getDirectFillColor(fill: Paint): { r: number; g: number; b: number } | null {
+  try {
+    if (fill.type === 'SOLID' && fill.visible !== false) {
+      return fill.color;
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function getDirectFillColors(node: FrameNode | GroupNode): Array<{ r: number; g: number; b: number }> {
+  const colors: Array<{ r: number; g: number; b: number }> = [];
+  
+  try {
+    if (!('fills' in node) || !isArrayValue(node.fills)) return colors;
+    
+    for (const fill of node.fills) {
+      const color = getDirectFillColor(fill);
+      if (color) {
+        colors.push(color);
+      }
+    }
+  } catch (error) {
+    // Silent fail
+  }
+  
+  return colors;
+}
+
+function styleColorMatchesNodeColors(styleId: string, node: FrameNode | GroupNode): boolean {
+  try {
+    const styleColor = getStyleResolvedColor(styleId);
+    if (!styleColor) return false;
+    
+    const nodeColors = getDirectFillColors(node);
+    if (nodeColors.length !== 1) return false; // Only support single color comparison for now
+    
+    return colorsMatch(styleColor, nodeColors[0]);
+  } catch (error) {
+    return false;
+  }
+}
+
+// TRANCHE 1: REFACTORED CONSTRAINT FUNCTIONS
+
+// High-risk safety constraints (apply to operations that could break functionality)
+function hasHighRiskSafetyIssues(node: FrameNode | GroupNode): boolean {
+  try {
+    if (!nodeExists(node)) return true;
+    
+    // Transforms/Rotation
     if ('rotation' in node && isNumberValue(node.rotation) && Math.abs(node.rotation) > 0.001) {
       return true;
     }
@@ -137,65 +255,7 @@ function hasTransformOrRotation(node: FrameNode | GroupNode): boolean {
       }
     }
     
-    return false;
-  } catch (error) {
-    return true;
-  }
-}
-
-function hasComplexFills(node: FrameNode | GroupNode): boolean {
-  try {
-    if (!nodeExists(node) || !('fills' in node)) return false;
-    
-    const fills = node.fills;
-    if (!isArrayValue(fills) || fills.length === 0) return false;
-    
-    for (const fill of fills) {
-      if (!fill.visible) continue;
-      
-      if (fill.type === 'GRADIENT_LINEAR' || 
-          fill.type === 'GRADIENT_RADIAL' || 
-          fill.type === 'GRADIENT_ANGULAR' || 
-          fill.type === 'GRADIENT_DIAMOND') {
-        return true;
-      }
-      
-      if (fill.type === 'IMAGE' || fill.type === 'VIDEO') {
-        return true;
-      }
-    }
-    
-    return false;
-  } catch (error) {
-    return true;
-  }
-}
-
-function hasComplexStrokes(node: FrameNode | GroupNode): boolean {
-  try {
-    if (!nodeExists(node) || !('strokes' in node)) return false;
-    
-    const strokes = node.strokes;
-    if (!isArrayValue(strokes) || strokes.length === 0) return false;
-    
-    for (const stroke of strokes) {
-      if (!stroke.visible) continue;
-      
-      if (stroke.type !== 'SOLID') {
-        return true;
-      }
-    }
-    
-    return false;
-  } catch (error) {
-    return true;
-  }
-}
-
-function hasPrototypeInteractions(node: FrameNode | GroupNode): boolean {
-  try {
-    if (!nodeExists(node)) return false;
-    
+    // Prototype interactions
     if ('reactions' in node && isArrayValue(node.reactions) && node.reactions.length > 0) {
       return true;
     }
@@ -204,25 +264,220 @@ function hasPrototypeInteractions(node: FrameNode | GroupNode): boolean {
       return true;
     }
     
+    // Advanced layout modes
+    if (isFrameNode(node)) {
+      if ('layoutWrap' in node && node.layoutWrap === 'WRAP') {
+        return true;
+      }
+      
+      if (hasAutoLayout(node) && node.counterAxisAlignItems === 'BASELINE') {
+        return true;
+      }
+      
+      if (node.layoutMode === 'GRID') {
+        return true;
+      }
+    }
+    
     return false;
   } catch (error) {
     return true;
   }
 }
 
-function hasAdvancedLayoutModes(node: FrameNode | GroupNode): boolean {
+// Visual property issues (apply to nodes being dissolved)
+function hasVisualPropertyIssues(node: FrameNode | GroupNode): boolean {
   try {
-    if (!nodeExists(node) || !isFrameNode(node)) return false;
+    if (!nodeExists(node)) return true;
     
-    if ('layoutWrap' in node && node.layoutWrap === 'WRAP') {
+    // Complex fills
+    if ('fills' in node) {
+      const fills = node.fills;
+      if (isArrayValue(fills) && fills.length > 0) {
+        for (const fill of fills) {
+          if (!fill.visible) continue;
+          
+          if (fill.type === 'GRADIENT_LINEAR' || 
+              fill.type === 'GRADIENT_RADIAL' || 
+              fill.type === 'GRADIENT_ANGULAR' || 
+              fill.type === 'GRADIENT_DIAMOND') {
+            return true;
+          }
+          
+          if (fill.type === 'IMAGE' || fill.type === 'VIDEO') {
+            return true;
+          }
+        }
+      }
+    }
+    
+    // Complex strokes
+    if ('strokes' in node) {
+      const strokes = node.strokes;
+      if (isArrayValue(strokes) && strokes.length > 0) {
+        for (const stroke of strokes) {
+          if (!stroke.visible) continue;
+          
+          if (stroke.type !== 'SOLID') {
+            return true;
+          }
+        }
+      }
+    }
+    
+    // Clips content
+    if ('clipsContent' in node && node.clipsContent === true) {
       return true;
     }
     
-    if (hasAutoLayout(node) && node.counterAxisAlignItems === 'BASELINE') {
+    // Layout grids
+    if ('layoutGrids' in node && isArrayValue(node.layoutGrids) && node.layoutGrids.length > 0) {
+      const hasVisibleGrids = node.layoutGrids.some(grid => grid.visible !== false);
+      if (hasVisibleGrids) {
+        return true;
+      }
+    }
+    
+    // Component property references
+    if ('componentPropertyReferences' in node && Object.keys(node.componentPropertyReferences || {}).length > 0) {
       return true;
     }
     
-    if (node.layoutMode === 'GRID') {
+    // Blend mode
+    if ('blendMode' in node && node.blendMode !== 'NORMAL' && node.blendMode !== 'PASS_THROUGH') {
+      return true;
+    }
+    
+    // Opacity
+    if (node.opacity !== 1) {
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    return true;
+  }
+}
+
+// Component safety check
+function hasComponentIssues(node: SceneNode): boolean {
+  try {
+    if (!nodeExists(node)) return true;
+    
+    // Explicit component type checking
+    if (node.type === 'COMPONENT' || node.type === 'COMPONENT_SET') {
+      return true;
+    }
+    
+    // Instance nodes might also need special handling
+    if (node.type === 'INSTANCE') {
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    return true;
+  }
+}
+
+// Dimensional constraint issues
+function hasDimensionalIssues(node: FrameNode | GroupNode, requireExactDimensions: boolean): boolean {
+  try {
+    if (!nodeExists(node)) return true;
+    
+    if (!requireExactDimensions) {
+      return false; // No dimensional constraints if dimensions match
+    }
+    
+    // Check for strokes
+    if ('strokes' in node && node.strokes && isArrayValue(node.strokes) && node.strokes.length > 0) {
+      return true;
+    }
+    
+    // Check for effects
+    if ('effects' in node && node.effects && isArrayValue(node.effects) && node.effects.length > 0) {
+      return true;
+    }
+    
+    // Check for corner radius
+    if (isFrameNode(node) && 'cornerRadius' in node && isNumberValue(node.cornerRadius) && node.cornerRadius > 0) {
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    return true;
+  }
+}
+
+// Layout compatibility issues (for sibling dissolution)
+function hasLayoutIncompatibilities(sibling: FrameNode, parent: FrameNode): boolean {
+  try {
+    if (!nodeExists(sibling) || !nodeExists(parent)) return true;
+    if (!hasAutoLayout(sibling) || !hasAutoLayout(parent)) return true;
+    
+    // Check absolute children
+    const absoluteChildren = getAbsoluteChildren(sibling);
+    if (absoluteChildren.length > 0) {
+      return true;
+    }
+    
+    // Check constraints
+    if ('constraints' in sibling && sibling.constraints) {
+      const constraints = sibling.constraints;
+      if (constraints.horizontal !== 'MIN' || constraints.vertical !== 'MIN') {
+        return true;
+      }
+    }
+    
+    // Check parent-sibling compatibility
+    if (!isParentSiblingCompatible(parent, sibling)) {
+      return true;
+    }
+    
+    // Check layout mode compatibility
+    const layoutChildren = getLayoutChildren(sibling);
+    const siblingException = layoutChildren.length === 1;
+    
+    if (!siblingException && sibling.layoutMode !== parent.layoutMode) {
+      return true;
+    }
+    
+    // Check spacing compatibility
+    const siblingSpacing = getChildSpacingInfo(sibling);
+    const parentSpacing = getChildSpacingInfo(parent);
+    
+    if (siblingSpacing.hasAutoGap !== parentSpacing.hasAutoGap) {
+      return true;
+    }
+    
+    if (Math.abs(siblingSpacing.impliedGapPixels - parentSpacing.impliedGapPixels) > 0.01) {
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    return true;
+  }
+}
+
+// Style ID constraint issues (for design token preservation)
+function hasStyleIdConflicts(node: FrameNode | GroupNode): boolean {
+  try {
+    if (!nodeExists(node)) return true;
+    
+    // Fill style ID
+    if ('fillStyleId' in node && isStringValue(node.fillStyleId) && node.fillStyleId !== '') {
+      return true;
+    }
+    
+    // Stroke style ID  
+    if ('strokeStyleId' in node && isStringValue(node.strokeStyleId) && node.strokeStyleId !== '') {
+      return true;
+    }
+    
+    // Effect style ID
+    if ('effectStyleId' in node && isStringValue(node.effectStyleId) && node.effectStyleId !== '') {
       return true;
     }
     
@@ -802,127 +1057,39 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode,
     return false;
   }
   
-  // PHASE 1 CRITICAL SAFETY CHECKS
-  if (hasTransformOrRotation(sibling)) {
+  // TRANCHE 1: Use refactored constraint functions
+  
+  // Component safety check
+  if (hasComponentIssues(sibling)) {
     return false;
   }
   
-  if (hasComplexFills(sibling)) {
+  // High-risk safety constraints
+  if (hasHighRiskSafetyIssues(sibling)) {
     return false;
   }
   
-  if (hasComplexStrokes(sibling)) {
+  // Visual property constraints
+  if (hasVisualPropertyIssues(sibling)) {
     return false;
   }
   
-  if (hasPrototypeInteractions(sibling)) {
+  // Layout incompatibilities
+  if (hasLayoutIncompatibilities(sibling, parent)) {
     return false;
   }
   
-  if (hasAdvancedLayoutModes(sibling)) {
-    return false;
-  }
-  
-  const absoluteChildren = getAbsoluteChildren(sibling);
-  if (absoluteChildren.length > 0) {
-    return false;
-  }
-  
+  // Check main-axis padding requirement
   if (requireZeroPadding && !siblingHasZeroPadding(sibling)) {
     return false;
   }
   
-  if (!isParentSiblingCompatible(parent, sibling)) {
+  // Style ID conflicts (design token preservation)
+  if (hasStyleIdConflicts(sibling)) {
     return false;
   }
   
-  const parentLayoutMode = parent.layoutMode;
-  const siblingException = layoutChildren.length === 1;
-  
-  if (!siblingException && sibling.layoutMode !== parentLayoutMode) {
-    return false;
-  }
-  
-  const siblingSpacing = getChildSpacingInfo(sibling);
-  const parentSpacing = getChildSpacingInfo(parent);
-  
-  if (siblingSpacing.hasAutoGap !== parentSpacing.hasAutoGap) {
-    return false;
-  }
-  
-  if (Math.abs(siblingSpacing.impliedGapPixels - parentSpacing.impliedGapPixels) > 0.01) {
-    return false;
-  }
-  
-  if (hasStroke(sibling)) {
-    return false;
-  }
-  
-  if (hasEffects(sibling)) {
-    return false;
-  }
-  
-  if (hasCornerRadius(sibling)) {
-    return false;
-  }
-  
-  if (sibling.opacity !== 1) {
-    return false;
-  }
-  
-  if ('fills' in sibling && isArrayValue(sibling.fills) && sibling.fills.length > 0) {
-    const hasVisibleFills = sibling.fills.some(fill => fill.visible !== false);
-    if (hasVisibleFills) {
-      return false;
-    }
-  }
-  
-  if ('blendMode' in sibling && sibling.blendMode !== 'NORMAL' && sibling.blendMode !== 'PASS_THROUGH') {
-    return false;
-  }
-  
-  if ('clipsContent' in sibling && sibling.clipsContent === true) {
-    return false;
-  }
-  
-  if ('layoutGrids' in sibling && isArrayValue(sibling.layoutGrids) && sibling.layoutGrids.length > 0) {
-    const hasVisibleGrids = sibling.layoutGrids.some(grid => grid.visible !== false);
-    if (hasVisibleGrids) {
-      return false;
-    }
-  }
-  
-  if ('exportSettings' in sibling && isArrayValue(sibling.exportSettings) && sibling.exportSettings.length > 0) {
-    return false;
-  }
-  
-  if ('componentPropertyReferences' in sibling && Object.keys(sibling.componentPropertyReferences || {}).length > 0) {
-    return false;
-  }
-  
-  if ('fillStyleId' in sibling && isStringValue(sibling.fillStyleId) && sibling.fillStyleId !== '') {
-    return false;
-  }
-  
-  if ('strokeStyleId' in sibling && isStringValue(sibling.strokeStyleId) && sibling.strokeStyleId !== '') {
-    return false;
-  }
-  
-  if ('effectStyleId' in sibling && isStringValue(sibling.effectStyleId) && sibling.effectStyleId !== '') {
-    return false;
-  }
-  
-  if ('constraints' in sibling && sibling.constraints) {
-    try {
-      const constraints = sibling.constraints;
-      if (constraints.horizontal !== 'MIN' || constraints.vertical !== 'MIN') {
-        return false;
-      }
-    } catch (error) {
-      return false;
-    }
-  }
-  
+  // Fill compatibility
   if (!fillsAreCompatible(parent, sibling, false)) {
     return false;
   }
@@ -1183,9 +1350,9 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
 }
 
 // Initialize plugin
-figma.showUI(__html__, { width: 350, height: 600 });
+figma.showUI(__html__, { width: 350, height: 450 });
 
-console.log('Frame Cleaner Plugin - Streamlined Version initialized');
+console.log('Frame Cleaner Plugin - Tranche 1: Constraint Refactoring initialized');
 
 let cleaningResults: CleaningResults = {
   framesAnalyzed: 0,
@@ -1552,7 +1719,8 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
   function analyzeNode(node: SceneNode): void {
     if (!nodeExists(node)) return;
     
-    if (node.type === 'COMPONENT') return;
+    // TRANCHE 1: Explicit component checking
+    if (hasComponentIssues(node)) return;
     
     if (isFrameOrGroup(node)) {
       results.totalFrames++;
@@ -1578,43 +1746,26 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
         const siblingFrames = layoutChildren.filter(child => isFrameNode(child) && nodeExists(child)) as FrameNode[];
         
         if (siblingFrames.length > 0) {
-          if (canAllSiblingsBeDissolvedTogether(node)) {
-            results.optimizableSiblingGroups++;
-            siblingFrames.forEach(sibling => {
-              if (nodeExists(sibling)) {
-                results.removableFrames++;
-                
-                const inheritance = calculateInheritanceDetails(sibling, node);
-                
-                results.removableFrameInfos.push({
-                  name: safeGetNodeName(sibling),
-                  nodeId: sibling.id,
-                  parentName: safeGetNodeName(node),
-                  inheritance: inheritance
-                });
+          // TRANCHE 2: Unified analysis - check each sibling individually
+          let hasPartialOptimization = false;
+          siblingFrames.forEach(sibling => {
+            if (nodeExists(sibling) && canSiblingBeDissolvedSelectively(sibling, node, true)) {
+              if (!hasPartialOptimization) {
+                results.optimizableSiblingGroups++;
+                hasPartialOptimization = true;
               }
-            });
-          } else {
-            let hasPartialOptimization = false;
-            siblingFrames.forEach(sibling => {
-              if (nodeExists(sibling) && canSiblingBeDissolvedSelectively(sibling, node, true)) {
-                if (!hasPartialOptimization) {
-                  results.optimizableSiblingGroups++;
-                  hasPartialOptimization = true;
-                }
-                results.removableFrames++;
-                
-                const inheritance = calculateInheritanceDetails(sibling, node);
-                
-                results.removableFrameInfos.push({
-                  name: safeGetNodeName(sibling),
-                  nodeId: sibling.id,
-                  parentName: safeGetNodeName(node),
-                  inheritance: inheritance
-                });
-              }
-            });
-          }
+              results.removableFrames++;
+              
+              const inheritance = calculateInheritanceDetails(sibling, node);
+              
+              results.removableFrameInfos.push({
+                name: safeGetNodeName(sibling),
+                nodeId: sibling.id,
+                parentName: safeGetNodeName(node),
+                inheritance: inheritance
+              });
+            }
+          });
         }
       }
       
@@ -1680,27 +1831,32 @@ function canSafelyMerge(parent: FrameNode | GroupNode, child: FrameNode | GroupN
     return false;
   }
   
-  // PHASE 1 CRITICAL SAFETY CHECKS
-  if (hasTransformOrRotation(parent) || hasComplexFills(parent) || 
-      hasComplexStrokes(parent) || hasPrototypeInteractions(parent) || 
-      hasAdvancedLayoutModes(parent)) {
+  // TRANCHE 1: Use refactored constraint functions
+  
+  // Component safety check
+  if (hasComponentIssues(parent) || hasComponentIssues(child)) {
     return false;
   }
   
-  if (hasTransformOrRotation(child) || hasComplexFills(child) || 
-      hasComplexStrokes(child) || hasPrototypeInteractions(child) || 
-      hasAdvancedLayoutModes(child)) {
+  // High-risk safety constraints (both parent and child)
+  if (hasHighRiskSafetyIssues(parent) || hasHighRiskSafetyIssues(child)) {
     return false;
   }
   
+  // Visual property constraints (child only - TRANCHE 1 CHANGE)
+  if (hasVisualPropertyIssues(child)) {
+    return false;
+  }
+  
+  // Dimensional constraints (child only)
+  if (hasDimensionalIssues(child, !sameDimensions)) {
+    return false;
+  }
+  
+  // Fill compatibility
   if (!fillsAreCompatible(parent, child, sameDimensions)) {
     return false;
   }
-  
-  if (hasStroke(child) && !sameDimensions) return false;
-  if (hasEffects(child) && !sameDimensions) return false;
-  if (hasCornerRadius(child) && !sameDimensions) return false;
-  if (child.opacity !== 1) return false;
   
   return true;
 }
@@ -1778,17 +1934,35 @@ function checkForIssues(node: FrameNode | GroupNode): Array<{node: string; issue
       const sameDimensions: boolean = dimensionsMatch(node, child);
       let reason = 'Cannot merge: ';
       
-      if (hasTransformOrRotation(node) || hasTransformOrRotation(child)) reason += 'transforms/rotation detected, ';
-      if (hasComplexFills(node) || hasComplexFills(child)) reason += 'gradients/images detected, ';
-      if (hasComplexStrokes(node) || hasComplexStrokes(child)) reason += 'complex strokes detected, ';
-      if (hasPrototypeInteractions(node) || hasPrototypeInteractions(child)) reason += 'prototype interactions detected, ';
-      if (hasAdvancedLayoutModes(node) || hasAdvancedLayoutModes(child)) reason += 'advanced layout modes detected, ';
+      // UPDATED: Use exact same constraint checks as optimization logic
       
-      if (!fillsAreCompatible(node, child, sameDimensions)) reason += 'incompatible fills, ';
-      if (hasStroke(child) && !sameDimensions) reason += 'child has stroke (different dimensions), ';
-      if (hasEffects(child) && !sameDimensions) reason += 'child has effects (different dimensions), ';
-      if (hasCornerRadius(child) && !sameDimensions) reason += 'child has corner radius (different dimensions), ';
-      if (child.opacity !== 1) reason += 'child has opacity, ';
+      // Component safety check (both parent and child)
+      if (hasComponentIssues(node)) reason += 'parent is component, ';
+      if (hasComponentIssues(child)) reason += 'child is component, ';
+      
+      // High-risk safety constraints (both parent and child)
+      if (hasHighRiskSafetyIssues(node)) reason += 'parent has transforms/interactions/advanced layouts, ';
+      if (hasHighRiskSafetyIssues(child)) reason += 'child has transforms/interactions/advanced layouts, ';
+      
+      // Visual property constraints (child only - Tranche 1 change)
+      if (hasVisualPropertyIssues(child)) reason += 'child has complex fills/strokes/clipping/layouts, ';
+      
+      // Dimensional constraints (child only)
+      if (hasDimensionalIssues(child, !sameDimensions)) reason += 'child has strokes/effects/corners with different dimensions, ';
+      
+      // Fill compatibility (updated for Tranche 3 simplified logic)
+      if (!fillsAreCompatible(node, child, sameDimensions)) {
+        const parentHasStyleID = ('fillStyleId' in node && isStringValue(node.fillStyleId) && node.fillStyleId !== '');
+        const childHasStyleID = ('fillStyleId' in child && isStringValue(child.fillStyleId) && child.fillStyleId !== '');
+        
+        if (parentHasStyleID && childHasStyleID) {
+          reason += 'different design tokens, ';
+        } else if (!parentHasStyleID && !childHasStyleID) {
+          reason += 'different hex colors, ';
+        } else {
+          reason += 'design token vs hex color (future enhancement), ';
+        }
+      }
       
       if (reason !== 'Cannot merge: ') {
         issues.push({
@@ -1815,7 +1989,8 @@ function cleanFrames(nodes: readonly SceneNode[]): void {
   function cleanNode(node: SceneNode): void {
     if (!nodeExists(node)) return;
     
-    if (node.type === 'COMPONENT') return;
+    // TRANCHE 1: Explicit component checking at entry point
+    if (hasComponentIssues(node)) return;
     
     if (isFrameOrGroup(node)) {
       cleaningResults.framesAnalyzed++;
@@ -2113,6 +2288,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
     // Silent fail
   }
   
+  // TRANCHE 3: Enhanced fill and style ID transfer logic
   if (sameDimensions && nodeExists(parentFrame)) {
     try {
       if (isStringValue(childEffectStyleId) && childEffectStyleId !== '') {
@@ -2141,40 +2317,61 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
         }
       }
       
-      if ((!('fills' in parentFrame) || !parentFrame.fills || !isArrayValue(parentFrame.fills) || parentFrame.fills.length === 0) && 
-          (childFills.length > 0 || (isStringValue(childFillStyleId) && childFillStyleId !== ''))) {
-        
-        if (isStringValue(childFillStyleId) && childFillStyleId !== '') {
-          if (isFrameNode(parentFrame) && 'fillStyleId' in parentFrame) {
-            parentFrame.fillStyleId = childFillStyleId;
-          }
-        } else if (childFills.length > 0) {
-          if ('fills' in parentFrame) {
-            parentFrame.fills = childFills;
-          }
-        }
-      }
-      else if (isStringValue(childFillStyleId) && childFillStyleId !== '' &&
-               ('fills' in parentFrame) && parentFrame.fills && isArrayValue(parentFrame.fills) && parentFrame.fills.length > 0) {
+      // TRANCHE 3: Enhanced fill and style ID transfer using figma.getStyleById()
+      const parentHasStyleID = ('fillStyleId' in parentFrame && isStringValue(parentFrame.fillStyleId) && parentFrame.fillStyleId !== '');
+      const childHasStyleID = (isStringValue(childFillStyleId) && childFillStyleId !== '');
+      
+      if (childHasStyleID) {
+        // Child has style ID - transfer it to parent (prioritize design tokens)
         if (isFrameNode(parentFrame) && 'fillStyleId' in parentFrame) {
           parentFrame.fillStyleId = childFillStyleId;
+          // Clear fills when using style ID
           if ('fills' in parentFrame) {
             parentFrame.fills = [];
           }
         }
+      } else if (parentHasStyleID && childFills.length > 0) {
+        // Parent has style ID, child has hex - check if style color matches child's hex
+        if (isStringValue(parentFrame.fillStyleId) && styleColorMatchesNodeColors(parentFrame.fillStyleId, childFrame as FrameNode | GroupNode)) {
+          // Colors match - keep parent's style ID (prioritize design tokens)
+          // No changes needed, parent keeps its style ID
+        } else {
+          // Colors don't match - use child's fills
+          if ('fills' in parentFrame) {
+            parentFrame.fills = childFills;
+            parentFrame.fillStyleId = '';
+          }
+        }
+      } else if (!parentHasStyleID && childFills.length > 0) {
+        // Neither has style ID - transfer child fills
+        if ('fills' in parentFrame) {
+          parentFrame.fills = childFills;
+        }
+      } else if ((!('fills' in parentFrame) || !parentFrame.fills || !isArrayValue(parentFrame.fills) || parentFrame.fills.length === 0) && childFills.length > 0) {
+        // Parent has no fills, child has fills - transfer them
+        if ('fills' in parentFrame) {
+          parentFrame.fills = childFills;
+        }
       }
+      
     } catch (error) {
       // Silent fail
     }
   } else if (nodeExists(parentFrame)) {
+    // TRANCHE 3: Simplified fill transfer for non-matching dimensions
+    const parentHasStyleID = ('fillStyleId' in parentFrame && isStringValue(parentFrame.fillStyleId) && parentFrame.fillStyleId !== '');
+    const childHasStyleID = (isStringValue(childFillStyleId) && childFillStyleId !== '');
+    
     if ((!('fills' in parentFrame) || !parentFrame.fills || !isArrayValue(parentFrame.fills) || parentFrame.fills.length === 0) && 
-        (childFills.length > 0 || (isStringValue(childFillStyleId) && childFillStyleId !== ''))) {
+        !parentHasStyleID) {
       try {
-        if (isStringValue(childFillStyleId) && childFillStyleId !== '') {
+        if (childHasStyleID) {
+          // Child has style ID - transfer it
           if (isFrameNode(parentFrame) && 'fillStyleId' in parentFrame) {
             parentFrame.fillStyleId = childFillStyleId;
           }
         } else if (childFills.length > 0) {
+          // Child has fills - transfer them
           if ('fills' in parentFrame) {
             parentFrame.fills = childFills;
           }
