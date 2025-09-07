@@ -1,8 +1,7 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Streamlined Auto-Analysis Version
-// Features: Real-time analysis on selection change, inheritance details, multi-frame support
-// Updated: Improved sibling dissolution logic for cross-axis padding
+// Frame Cleaner Plugin - Production Version
+// Features: Loading states, race condition fixes, deep optimize default enabled
 
 // Type definitions
 interface CleaningResults {
@@ -67,6 +66,7 @@ interface UIMessage {
   nodeId?: string;
   settings?: {
     removeSingleChild?: boolean;
+    deepOptimize?: boolean;
   };
 }
 
@@ -366,7 +366,7 @@ function dimensionsMatch(parent: FrameNode | GroupNode, child: FrameNode | Group
   }
 }
 
-// NEW: Enhanced padding helper functions for improved sibling dissolution
+// Enhanced padding helper functions for improved sibling dissolution
 function getMainAxisPadding(frame: FrameNode, parentLayoutMode: string): {start: number, end: number} {
   if (!hasAutoLayout(frame)) {
     return { start: 0, end: 0 };
@@ -408,6 +408,56 @@ function siblingsHaveIdenticalCrossAxisPadding(siblings: FrameNode[], parentLayo
            crossPadding.left === referenceCrossPadding.left &&
            crossPadding.right === referenceCrossPadding.right;
   });
+}
+
+function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): CrossDirectionPadding {
+  if (!hasAutoLayout(frame)) {
+    return { top: 0, bottom: 0, left: 0, right: 0 };
+  }
+  
+  if (parentLayoutMode === 'HORIZONTAL') {
+    return { 
+      top: frame.paddingTop, 
+      bottom: frame.paddingBottom, 
+      left: 0, 
+      right: 0 
+    };
+  } else if (parentLayoutMode === 'VERTICAL') {
+    return { 
+      top: 0, 
+      bottom: 0, 
+      left: frame.paddingLeft, 
+      right: frame.paddingRight 
+    };
+  }
+  
+  return { top: 0, bottom: 0, left: 0, right: 0 };
+}
+
+function siblingAlignmentMatchesParent(sibling: FrameNode, parent: FrameNode): boolean {
+  if (!hasAutoLayout(sibling) || !hasAutoLayout(parent)) return false;
+  
+  return sibling.primaryAxisAlignItems === parent.primaryAxisAlignItems &&
+         sibling.counterAxisAlignItems === parent.counterAxisAlignItems;
+}
+
+// Helper functions for fixed width checking
+function hasFixedSizing(node: FrameNode): boolean {
+  if (!hasAutoLayout(node)) return false;
+  
+  return node.primaryAxisSizingMode === 'FIXED' || 
+         node.counterAxisSizingMode === 'FIXED' ||
+         node.layoutSizingHorizontal === 'FIXED' || 
+         node.layoutSizingVertical === 'FIXED';
+}
+
+function siblingHasZeroPadding(sibling: FrameNode): boolean {
+  if (!hasAutoLayout(sibling)) return true;
+  
+  return sibling.paddingTop === 0 && 
+         sibling.paddingBottom === 0 && 
+         sibling.paddingLeft === 0 && 
+         sibling.paddingRight === 0;
 }
 
 // Inheritance detail calculation functions
@@ -549,7 +599,10 @@ function applyLayoutSizingInheritance(
   const existingGrandchildren = grandchildren.filter(grandchild => nodeExists(grandchild));
   
   existingGrandchildren.forEach((grandchild) => {
-    if (!nodeExists(grandchild) || !isFrameNode(grandchild)) return;
+    if (!nodeExists(grandchild)) return;
+    
+    // Only apply to nodes that have layout sizing properties (includes text, shapes, components, etc.)
+    if (!('layoutSizingHorizontal' in grandchild) || !('layoutSizingVertical' in grandchild)) return;
     
     try {
       const originalHorizontal = grandchild.layoutSizingHorizontal;
@@ -602,6 +655,18 @@ function determineAlignmentInheritance(
   const isSingleChildMerge = layoutChildren.length === 1;
   
   if (isSingleChildMerge) {
+    // CRITICAL FIX: Handle auto gap within single child merge
+    if (childSpacingInfo?.hasAutoGap) {
+      const layoutModesDiffer = parentLayoutMode !== childLayoutMode;
+      
+      const result = { 
+        inheritPrimaryAxis: true, 
+        inheritCounterAxis: layoutModesDiffer,
+        forceSpaceBetween: true 
+      };
+      return result;
+    }
+    
     let parentPrimarySizing: string;
     let parentCounterSizing: string;
     let childPrimarySizing: string;
@@ -638,11 +703,14 @@ function determineAlignmentInheritance(
   }
   
   if (childSpacingInfo?.hasAutoGap) {
-    return { 
+    const layoutModesDiffer = parentLayoutMode !== childLayoutMode;
+    
+    const result = { 
       inheritPrimaryAxis: true, 
-      inheritCounterAxis: false,
+      inheritCounterAxis: layoutModesDiffer,
       forceSpaceBetween: true 
     };
+    return result;
   }
   
   if (parentLayoutMode !== childLayoutMode) {
@@ -804,39 +872,6 @@ function isSizingCombinationCompatible(parentSizing: string, childSizing: string
   return true;
 }
 
-function getCrossDirectionPadding(frame: FrameNode, parentLayoutMode: string): CrossDirectionPadding {
-  if (!hasAutoLayout(frame)) {
-    return { top: 0, bottom: 0, left: 0, right: 0 };
-  }
-  
-  if (parentLayoutMode === 'HORIZONTAL') {
-    return { 
-      top: frame.paddingTop, 
-      bottom: frame.paddingBottom, 
-      left: 0, 
-      right: 0 
-    };
-  } else if (parentLayoutMode === 'VERTICAL') {
-    return { 
-      top: 0, 
-      bottom: 0, 
-      left: frame.paddingLeft, 
-      right: frame.paddingRight 
-    };
-  }
-  
-  return { top: 0, bottom: 0, left: 0, right: 0 };
-}
-
-function siblingHasZeroPadding(sibling: FrameNode): boolean {
-  if (!hasAutoLayout(sibling)) return true;
-  
-  return sibling.paddingTop === 0 && 
-         sibling.paddingBottom === 0 && 
-         sibling.paddingLeft === 0 && 
-         sibling.paddingRight === 0;
-}
-
 function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode, requireZeroPadding: boolean = false): boolean {
   if (!hasAutoLayout(sibling)) {
     return false;
@@ -844,6 +879,16 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode,
   
   const layoutChildren = getLayoutChildren(sibling);
   if (layoutChildren.length === 0) {
+    return false;
+  }
+  
+  // Require sibling alignment to match parent alignment
+  if (!siblingAlignmentMatchesParent(sibling, parent)) {
+    return false;
+  }
+  
+  // Check for fixed width/sizing unless deep optimize is enabled
+  if (!deepOptimizeEnabled && hasFixedSizing(sibling)) {
     return false;
   }
   
@@ -975,7 +1020,7 @@ function canSiblingBeDissolvedSelectively(sibling: FrameNode, parent: FrameNode,
   return true;
 }
 
-// UPDATED: Enhanced sibling dissolution validation with improved padding logic
+// Enhanced sibling dissolution validation with improved padding logic
 function canAllSiblingsBeDissolvedTogether(parentFrame: FrameNode): boolean {
   if (!nodeExists(parentFrame) || !hasAutoLayout(parentFrame)) return false;
   
@@ -984,14 +1029,23 @@ function canAllSiblingsBeDissolvedTogether(parentFrame: FrameNode): boolean {
   
   if (siblingFrames.length === 0) return false;
   
+  // Check for fixed width/sizing unless deep optimize is enabled
+  if (!deepOptimizeEnabled) {
+    for (const sibling of siblingFrames) {
+      if (hasFixedSizing(sibling)) {
+        return false;
+      }
+    }
+  }
+  
   const parentLayoutMode = parentFrame.layoutMode;
   
-  // NEW: Check for zero main-axis padding across all siblings
+  // Check for zero main-axis padding across all siblings
   if (!siblingsHaveZeroMainAxisPadding(siblingFrames, parentLayoutMode)) {
     return false;
   }
   
-  // NEW: Check for identical cross-axis padding across all siblings
+  // Check for identical cross-axis padding across all siblings
   if (!siblingsHaveIdenticalCrossAxisPadding(siblingFrames, parentLayoutMode)) {
     return false;
   }
@@ -1064,6 +1118,11 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
       
       if (hasChildren(sibling)) {
         const childrenToMove = [...sibling.children].filter(child => nodeExists(child));
+        
+        // Apply sizing inheritance BEFORE moving children
+        if (isFrameNode(sibling)) {
+          applyLayoutSizingInheritance(parentFrame, sibling, childrenToMove);
+        }
         
         for (let j = childrenToMove.length - 1; j >= 0; j--) {
           const child = childrenToMove[j];
@@ -1158,6 +1217,11 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
   if (hasChildren(sibling)) {
     const children = [...sibling.children].filter(child => nodeExists(child));
     
+    // Apply sizing inheritance BEFORE moving children
+    if (isFrameNode(sibling)) {
+      applyLayoutSizingInheritance(parent, sibling, children);
+    }
+    
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
       siblingChildren.unshift(child);
@@ -1231,9 +1295,12 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
 }
 
 // Initialize plugin
-figma.showUI(__html__, { width: 350, height: 450 });
+figma.showUI(__html__, { width: 350, height: 600 });
 
 console.log('Frame Cleaner Plugin - Streamlined Version initialized');
+
+// Deep optimize setting - enabled by default
+let deepOptimizeEnabled: boolean = true;
 
 let cleaningResults: CleaningResults = {
   framesAnalyzed: 0,
@@ -1251,13 +1318,34 @@ let framesWithActiveStrokes: Map<string, {
   originalStrokeWeight: number;
   originalStrokeAlign: 'INSIDE' | 'OUTSIDE' | 'CENTER';
   originalStrokeStyleId: string;
+  timeoutId?: number;
+  fadeTimeoutId?: number;
 }> = new Map();
+
+// Track all active timeouts for proper cleanup
+let activeStrokeTimeouts: Set<number> = new Set();
 
 // Cleanup function to remove all active strokes
 function cleanupActiveStrokes(): void {
+  // Clear all pending timeouts first
+  activeStrokeTimeouts.forEach(timeoutId => {
+    clearTimeout(timeoutId);
+  });
+  activeStrokeTimeouts.clear();
+
   framesWithActiveStrokes.forEach((data, nodeId) => {
     try {
-      const { node, originalStrokes, originalStrokeWeight, originalStrokeAlign, originalStrokeStyleId } = data;
+      const { node, originalStrokes, originalStrokeWeight, originalStrokeAlign, originalStrokeStyleId, timeoutId, fadeTimeoutId } = data;
+      
+      // Clear any pending timeouts for this specific node
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        activeStrokeTimeouts.delete(timeoutId);
+      }
+      if (fadeTimeoutId) {
+        clearTimeout(fadeTimeoutId);
+        activeStrokeTimeouts.delete(fadeTimeoutId);
+      }
       
       if (nodeExists(node)) {
         // Restore original stroke style first (for variables)
@@ -1295,33 +1383,57 @@ figma.on('close', () => {
 let analyzedFrame: SceneNode | null = null;
 let analyzedFrameData: AnalysisResults | null = null;
 
-// Selection change monitoring with immediate analysis
+// Selection change monitoring with immediate frame name update and deferred analysis
 figma.on('selectionchange', (): void => {
   const selection = figma.currentPage.selection;
   const hasSelection: boolean = selection.length > 0;
   
   if (hasSelection) {
-    // Immediate analysis on selection change
-    const results: AnalysisResults = analyzeFrames(selection);
+    // IMMEDIATE: Send frame name update first
+    let frameName: string;
+    let frameId: string;
     
-    // Determine frame name for display
     if (selection.length === 1) {
-      results.frameName = safeGetNodeName(selection[0]);
-      results.frameId = selection[0].id;
+      frameName = safeGetNodeName(selection[0]);
+      frameId = selection[0].id;
     } else {
-      results.frameName = 'Multiple Frames selected';
-      results.frameId = 'multiple';
+      frameName = 'Multiple Frames selected';
+      frameId = 'multiple';
     }
     
-    // Store for optimization
-    analyzedFrame = selection[0];
-    analyzedFrameData = results;
-    
+    // Send immediate frame name update with cleared stats
     figma.ui.postMessage({
-      type: 'analysis-result',
+      type: 'frame-name-update',
       hasSelection: true,
-      results: results
+      frameName: frameName,
+      frameId: frameId
     });
+    
+    // DEFERRED: Perform analysis and send full results
+    setTimeout(() => {
+      // Check if selection is still the same by comparing length and first item ID
+      const currentSelection = figma.currentPage.selection;
+      const selectionUnchanged = currentSelection.length === selection.length && 
+                                currentSelection.length > 0 && 
+                                currentSelection[0].id === selection[0].id;
+      
+      if (selectionUnchanged) {
+        const results: AnalysisResults = analyzeFrames(selection);
+        results.frameName = frameName;
+        results.frameId = frameId;
+        
+        // Store for optimization
+        analyzedFrame = selection[0];
+        analyzedFrameData = results;
+        
+        figma.ui.postMessage({
+          type: 'analysis-result',
+          hasSelection: true,
+          results: results
+        });
+      }
+    }, 10);
+    
   } else {
     // Clear analysis and go back to initial state
     analyzedFrame = null;
@@ -1335,31 +1447,46 @@ figma.on('selectionchange', (): void => {
   }
 });
 
-// Send initial selection state
+// Send initial selection state with improved loading
 setTimeout((): void => {
   const selection = figma.currentPage.selection;
   const hasSelection: boolean = selection.length > 0;
   
   if (hasSelection) {
-    // Immediate analysis on plugin open if something is selected
-    const results: AnalysisResults = analyzeFrames(selection);
+    // Send immediate frame name first
+    let frameName: string;
+    let frameId: string;
     
     if (selection.length === 1) {
-      results.frameName = safeGetNodeName(selection[0]);
-      results.frameId = selection[0].id;
+      frameName = safeGetNodeName(selection[0]);
+      frameId = selection[0].id;
     } else {
-      results.frameName = 'Multiple Frames selected';
-      results.frameId = 'multiple';
+      frameName = 'Multiple Frames selected';
+      frameId = 'multiple';
     }
     
-    analyzedFrame = selection[0];
-    analyzedFrameData = results;
-    
     figma.ui.postMessage({
-      type: 'analysis-result',
+      type: 'frame-name-update',
       hasSelection: true,
-      results: results
+      frameName: frameName,
+      frameId: frameId
     });
+    
+    // Then perform analysis
+    setTimeout(() => {
+      const results: AnalysisResults = analyzeFrames(selection);
+      results.frameName = frameName;
+      results.frameId = frameId;
+      
+      analyzedFrame = selection[0];
+      analyzedFrameData = results;
+      
+      figma.ui.postMessage({
+        type: 'analysis-result',
+        hasSelection: true,
+        results: results
+      });
+    }, 10);
   } else {
     figma.ui.postMessage({
       type: 'selection-changed',
@@ -1382,14 +1509,23 @@ figma.ui.onmessage = (msg: UIMessage): void => {
         locateFrame(msg.nodeId);
       }
       break;
+    case 'update-settings':
+      if (msg.settings) {
+        deepOptimizeEnabled = msg.settings.deepOptimize || false;
+        console.log('Deep optimize setting updated:', deepOptimizeEnabled);
+      }
+      break;
     default:
       console.log('Unknown message type:', msg.type);
   }
 };
 
-// Locate frame with temporary highlight
+// Locate frame with temporary highlight - improved stroke cleanup
 function locateFrame(nodeId: string): void {
   try {
+    // IMMEDIATE: Clean up any existing strokes first to prevent race conditions
+    cleanupActiveStrokes();
+    
     const node = figma.getNodeById(nodeId);
     
     if (!node || !nodeExists(node)) {
@@ -1420,15 +1556,6 @@ function locateFrame(nodeId: string): void {
         ? sceneNode.strokeStyleId 
         : '';
       
-      // Track this frame for cleanup
-      framesWithActiveStrokes.set(nodeId, {
-        node: sceneNode,
-        originalStrokes,
-        originalStrokeWeight,
-        originalStrokeAlign,
-        originalStrokeStyleId
-      });
-      
       // Apply blue highlight stroke
       sceneNode.strokes = [{
         type: 'SOLID',
@@ -1443,8 +1570,8 @@ function locateFrame(nodeId: string): void {
         sceneNode.strokeStyleId = '';
       }
       
-      // Remove stroke after 1 second (reduced from 2)
-      setTimeout(() => {
+      // Set up cleanup with proper timeout tracking
+      const mainTimeoutId = setTimeout(() => {
         try {
           if (nodeExists(sceneNode) && framesWithActiveStrokes.has(nodeId)) {
             // Gradually fade stroke by reducing opacity first
@@ -1465,7 +1592,7 @@ function locateFrame(nodeId: string): void {
             }
             
             // Complete removal after short fade
-            setTimeout(() => {
+            const fadeTimeoutId = setTimeout(() => {
               if (nodeExists(sceneNode) && framesWithActiveStrokes.has(nodeId)) {
                 try {
                   const data = framesWithActiveStrokes.get(nodeId);
@@ -1487,47 +1614,46 @@ function locateFrame(nodeId: string): void {
                     
                     sceneNode.strokeAlign = data.originalStrokeAlign;
                     
+                    // Clean up timeout tracking
+                    if (data.timeoutId) activeStrokeTimeouts.delete(data.timeoutId);
+                    if (data.fadeTimeoutId) activeStrokeTimeouts.delete(data.fadeTimeoutId);
+                    
                     // Remove from tracking since it's complete
                     framesWithActiveStrokes.delete(nodeId);
                   }
                 } catch (restoreError) {
                   console.error('Error in detailed restoration:', restoreError);
-                  // Fallback: use cleanup function
-                  const data = framesWithActiveStrokes.get(nodeId);
-                  if (data) {
-                    try {
-                      sceneNode.strokes = data.originalStrokes;
-                      sceneNode.strokeAlign = data.originalStrokeAlign;
-                      framesWithActiveStrokes.delete(nodeId);
-                    } catch (fallbackError) {
-                      console.error('Fallback restoration failed:', fallbackError);
-                      framesWithActiveStrokes.delete(nodeId); // Remove even if restoration failed
-                    }
-                  }
+                  // Emergency cleanup
+                  framesWithActiveStrokes.delete(nodeId);
                 }
               }
             }, 200);
+            
+            // Update timeout tracking
+            activeStrokeTimeouts.add(fadeTimeoutId);
+            if (framesWithActiveStrokes.has(nodeId)) {
+              const data = framesWithActiveStrokes.get(nodeId)!;
+              data.fadeTimeoutId = fadeTimeoutId;
+              framesWithActiveStrokes.set(nodeId, data);
+            }
           }
         } catch (error) {
           console.error('Error during fade:', error);
           // Emergency cleanup
-          if (framesWithActiveStrokes.has(nodeId)) {
-            const data = framesWithActiveStrokes.get(nodeId);
-            if (data && nodeExists(sceneNode)) {
-              try {
-                sceneNode.strokes = data.originalStrokes;
-                if (data.originalStrokeStyleId && 'strokeStyleId' in sceneNode) {
-                  sceneNode.strokeStyleId = data.originalStrokeStyleId;
-                }
-                framesWithActiveStrokes.delete(nodeId);
-              } catch (emergencyError) {
-                console.error('Emergency restoration failed:', emergencyError);
-                framesWithActiveStrokes.delete(nodeId); // Remove even if failed
-              }
-            }
-          }
+          framesWithActiveStrokes.delete(nodeId);
         }
-      }, 1000); // Changed from 2000ms to 1000ms
+      }, 1000);
+      
+      // Track timeout and frame data
+      activeStrokeTimeouts.add(mainTimeoutId);
+      framesWithActiveStrokes.set(nodeId, {
+        node: sceneNode,
+        originalStrokes,
+        originalStrokeWeight,
+        originalStrokeAlign,
+        originalStrokeStyleId,
+        timeoutId: mainTimeoutId
+      });
     }
     
   } catch (error) {
@@ -1609,16 +1735,22 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
         results.mergeableFrames++;
         results.removableFrames++;
         
-        const parent = getParentFrame(node);
-        const parentName = parent ? safeGetNodeName(parent) : 'Root';
-        const inheritance = calculateInheritanceDetails(node, parent || node);
+        // Get the child frame that will actually be removed
+        const layoutChildren = getLayoutChildren(node);
+        const childFrame = layoutChildren[0];
         
-        results.removableFrameInfos.push({
-          name: safeGetNodeName(node),
-          nodeId: node.id,
-          parentName: parentName,
-          inheritance: inheritance
-        });
+        // Type guard: ensure child is a frame or group
+        if (childFrame && isFrameOrGroup(childFrame)) {
+          const parentName = safeGetNodeName(node); // The selected parent frame
+          const inheritance = calculateInheritanceDetails(childFrame, node);
+          
+          results.removableFrameInfos.push({
+            name: safeGetNodeName(childFrame), // Show child frame name
+            nodeId: childFrame.id,             // Use child frame nodeId
+            parentName: parentName,            // Parent is the selected frame
+            inheritance: inheritance
+          });
+        }
       }
       
       if (isFrameNode(node) && hasAutoLayout(node) && nodeExists(node)) {
@@ -1725,6 +1857,11 @@ function canSafelyMerge(parent: FrameNode | GroupNode, child: FrameNode | GroupN
   }
   
   if (!hasAutoLayout(parent) || !hasAutoLayout(child)) {
+    return false;
+  }
+  
+  // Check for fixed width/sizing unless deep optimize is enabled
+  if (!deepOptimizeEnabled && isFrameNode(child) && hasFixedSizing(child)) {
     return false;
   }
   

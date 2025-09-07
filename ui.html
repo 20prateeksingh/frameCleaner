@@ -75,9 +75,48 @@
       font-weight: 500;
     }
     
+    /* Deep Optimize Toggle */
+    .deep-optimize-container {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 32px;
+    }
+    
+    .toggle-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    
+    .toggle-checkbox {
+      margin: 0;
+      margin-top: 2px;
+    }
+    
+    .toggle-content {
+      flex: 1;
+    }
+    
+    .toggle-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #1e293b;
+      margin-bottom: 4px;
+      cursor: pointer;
+    }
+    
+    .toggle-description {
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.4;
+    }
+    
     .initial-links {
       text-align: center;
-      margin-top: 48px;
+      margin-top: 24px;
     }
     
     .link {
@@ -141,8 +180,14 @@
       font-weight: 600;
     }
     
+    /* Loading states */
+    .stat-value.loading {
+      color: #94a3b8;
+      font-style: italic;
+    }
+    
     .removable-container {
-      margin-bottom: 24px;
+      margin-bottom: 32px;
     }
     
     .removable-list {
@@ -208,8 +253,13 @@
       justify-content: center;
     }
 
-    .target-icon:hover {
+    .target-icon:hover:not(.disabled) {
       opacity: 1;
+    }
+    
+    .target-icon.disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
     }
 
     .target-icon svg {
@@ -306,6 +356,13 @@
       opacity: 0.6;
       pointer-events: none;
     }
+    
+    /* Loading placeholder */
+    .loading-placeholder {
+      font-size: 11px;
+      color: #94a3b8;
+      font-style: italic;
+    }
   </style>
 </head>
 <body>
@@ -320,6 +377,19 @@
         [Placeholder for GIF/Image]
       </div>
       <div class="initial-message">Select a frame to get started</div>
+    </div>
+
+    <!-- Deep Optimize Toggle -->
+    <div class="deep-optimize-container">
+      <div class="toggle-row">
+        <input type="checkbox" id="deep-optimize-toggle" class="toggle-checkbox">
+        <div class="toggle-content">
+          <label for="deep-optimize-toggle" class="toggle-label">Deep Optimize</label>
+          <div class="toggle-description">
+            Enables deeper optimizations but may lead to unexpected changes with frames set to fixed width
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="initial-links">
@@ -391,6 +461,8 @@
     // State management
     let currentScreen = 'initial';
     let analysisData = null;
+    let deepOptimizeEnabled = false;
+    let isAnalyzing = false;
 
     // Screen management
     function showScreen(screenId) {
@@ -399,6 +471,57 @@
       });
       document.getElementById(screenId + '-screen').classList.add('active');
       currentScreen = screenId;
+    }
+
+    // Send deep optimize setting to plugin
+    function updateDeepOptimizeSetting() {
+      const checkbox = document.getElementById('deep-optimize-toggle');
+      deepOptimizeEnabled = checkbox.checked;
+      
+      parent.postMessage({ 
+        pluginMessage: { 
+          type: 'update-settings',
+          settings: {
+            deepOptimize: deepOptimizeEnabled
+          }
+        } 
+      }, '*');
+    }
+
+    // Clear stats and show loading state
+    function clearStatsWithLoading() {
+      document.getElementById('total-frames').textContent = 'Analyzing...';
+      document.getElementById('total-frames').classList.add('loading');
+      document.getElementById('removable-frames').textContent = 'Analyzing...';
+      document.getElementById('removable-frames').classList.add('loading');
+      
+      // Clear removable list
+      const list = document.getElementById('removable-list');
+      list.innerHTML = '<div class="loading-placeholder" style="padding: 16px; text-align: center;">Analyzing...</div>';
+      
+      // Hide removable container initially
+      document.getElementById('removable-container').style.display = 'none';
+      
+      isAnalyzing = true;
+    }
+
+    // Remove loading state from stats
+    function removeLoadingState() {
+      document.getElementById('total-frames').classList.remove('loading');
+      document.getElementById('removable-frames').classList.remove('loading');
+      isAnalyzing = false;
+    }
+
+    // Handle immediate frame name update
+    function handleFrameNameUpdate(frameName) {
+      // Update frame name immediately
+      document.getElementById('frame-name').textContent = frameName;
+      
+      // Clear old stats and show loading
+      clearStatsWithLoading();
+      
+      // Show analysis screen
+      showScreen('analysis');
     }
 
     // Format inheritance value for display
@@ -528,15 +651,29 @@
         }
       });
 
-      // Add click handler for target icon (locate frame)
+      // Add click handler for target icon (locate frame) with debouncing
       targetIcon.addEventListener('click', (e) => {
         e.stopPropagation();
+        
+        // Prevent rapid clicks
+        if (targetIcon.classList.contains('disabled')) {
+          return;
+        }
+        
+        // Disable temporarily to prevent race conditions
+        targetIcon.classList.add('disabled');
+        
         parent.postMessage({ 
           pluginMessage: { 
             type: 'locate-frame', 
             nodeId: frameInfo.nodeId 
           } 
         }, '*');
+        
+        // Re-enable after stroke cleanup period (1.5 seconds to be safe)
+        setTimeout(() => {
+          targetIcon.classList.remove('disabled');
+        }, 1500);
       });
 
       header.appendChild(titleContainer);
@@ -551,6 +688,9 @@
     function showAnalysisResults(results) {
       analysisData = results;
       
+      // Remove loading state
+      removeLoadingState();
+      
       if (results.removableFrames === 0) {
         showOptimizedScreen(results);
       } else {
@@ -560,7 +700,7 @@
 
     // Show normal analysis with removable frames
     function showNormalAnalysis(results) {
-      // Update frame name
+      // Update frame name (should already be set, but ensure consistency)
       document.getElementById('frame-name').textContent = results.frameName;
       
       // Update stats
@@ -612,6 +752,9 @@
       alert('Bug reporting functionality coming soon!');
     });
 
+    // Deep optimize toggle event listener
+    document.getElementById('deep-optimize-toggle').addEventListener('change', updateDeepOptimizeSetting);
+
     // Message handler from plugin
     window.onmessage = (event) => {
       const message = event.data.pluginMessage;
@@ -621,8 +764,15 @@
           // Go back to initial screen when nothing is selected
           showScreen('initial');
           analysisData = null;
+          isAnalyzing = false;
+        }
+      } else if (message.type === 'frame-name-update') {
+        // Handle immediate frame name update with cleared stats
+        if (message.hasSelection && message.frameName) {
+          handleFrameNameUpdate(message.frameName);
         }
       } else if (message.type === 'analysis-result') {
+        // Handle full analysis results
         if (message.hasSelection && message.results) {
           showAnalysisResults(message.results);
         }
@@ -631,6 +781,11 @@
 
     // Initialize
     showScreen('initial');
+    
+    // Send initial deep optimize setting
+    setTimeout(() => {
+      updateDeepOptimizeSetting();
+    }, 100);
   </script>
 </body>
 </html>
