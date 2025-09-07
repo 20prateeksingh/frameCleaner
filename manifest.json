@@ -1,6 +1,6 @@
 {
   "name": "Frame Cleaner",
-  "id": "frame-cleaner-plugin",
+  "id": "1546639159666408069",
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",
@@ -9,18 +9,11 @@
   "editorType": [
     "figma"
   ],
+  "documentAccess": "dynamic-page",
   "networkAccess": {
-    "allowedDomains": [
-      "none"
-    ]
+    "allowedDomains": ["none"]
   },
   "permissions": [
     "currentuser"
-  ],
-  "menu": [
-    {
-      "name": "Frame Cleaner",
-      "command": "frame-cleaner"
-    }
   ]
 }

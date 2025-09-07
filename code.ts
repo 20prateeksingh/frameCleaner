@@ -1,7 +1,7 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Production Version
-// Features: Loading states, race condition fixes, deep optimize default enabled
+// Frame Cleaner Plugin - Production Version with Critical Fixes
+// Features: Error collection, memory leak fixes, improved UX
 
 // Type definitions
 interface CleaningResults {
@@ -14,6 +14,8 @@ interface CleaningResults {
     node: string;
     issue: string;
   }>;
+  criticalErrors: string[];  // NEW: User-facing errors
+  warnings: string[];       // NEW: Non-blocking issues
 }
 
 interface InheritanceDetails {
@@ -45,6 +47,12 @@ interface AnalysisResults {
     node: string;
     issue: string;
   }>;
+}
+
+interface OptimizationResults extends AnalysisResults {
+  criticalErrors: string[];
+  warnings: string[];
+  framesRemoved: number;
 }
 
 interface CombinedPadding {
@@ -1139,7 +1147,8 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
       }
       
     } catch (error) {
-      // Silent fail
+      const errorMsg = `Failed to dissolve sibling "${safeGetNodeName(sibling)}"`;
+      cleaningResults.criticalErrors.push(errorMsg);
     }
   }
   
@@ -1231,7 +1240,8 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
           parent.insertChild(siblingIndex, child);
         }
       } catch (error) {
-        // Silent fail
+        const errorMsg = `Failed to move child "${safeGetNodeName(child)}"`;
+        cleaningResults.warnings.push(errorMsg);
       }
     }
   }
@@ -1240,6 +1250,8 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
     sibling.remove();
     cleaningResults.siblingsRemoved++;
   } catch (error) {
+    const errorMsg = `Failed to remove sibling "${safeGetNodeName(sibling)}"`;
+    cleaningResults.criticalErrors.push(errorMsg);
     return;
   }
 }
@@ -1266,7 +1278,12 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
   });
   
   if (canAllSiblingsBeDissolvedTogether(parentFrame)) {
-    dissolveAllSiblings(parentFrame);
+    try {
+      dissolveAllSiblings(parentFrame);
+    } catch (error) {
+      const errorMsg = `Failed to dissolve siblings in "${safeGetNodeName(parentFrame)}"`;
+      cleaningResults.criticalErrors.push(errorMsg);
+    }
     return;
   }
   
@@ -1284,7 +1301,8 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
         dissolvedCount++;
         paddingTransferred = true;
       } catch (error) {
-        // Silent fail
+        const errorMsg = `Failed to dissolve sibling "${safeGetNodeName(sibling)}"`;
+        cleaningResults.warnings.push(errorMsg);
       }
     }
   }
@@ -1297,9 +1315,9 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
 // Initialize plugin
 figma.showUI(__html__, { width: 350, height: 600 });
 
-console.log('Frame Cleaner Plugin - Streamlined Version initialized');
+console.log('Frame Cleaner Plugin - Fixed Version initialized');
 
-// Deep optimize setting - enabled by default
+// Deep optimize setting - enabled by default for v1
 let deepOptimizeEnabled: boolean = true;
 
 let cleaningResults: CleaningResults = {
@@ -1308,7 +1326,9 @@ let cleaningResults: CleaningResults = {
   siblingGroupsOptimized: 0,
   siblingsRemoved: 0,
   paddingOptimized: 0,
-  issues: []
+  issues: [],
+  criticalErrors: [],
+  warnings: []
 };
 
 // Store frames with active temporary strokes for cleanup
@@ -1325,58 +1345,118 @@ let framesWithActiveStrokes: Map<string, {
 // Track all active timeouts for proper cleanup
 let activeStrokeTimeouts: Set<number> = new Set();
 
-// Cleanup function to remove all active strokes
-function cleanupActiveStrokes(): void {
+// FIXED: Async memory leak cleanup function
+async function cleanupActiveStrokes(): Promise<void> {
   // Clear all pending timeouts first
   activeStrokeTimeouts.forEach(timeoutId => {
     clearTimeout(timeoutId);
   });
   activeStrokeTimeouts.clear();
 
+  // More conservative dead node detection
+  const deadNodeIds: string[] = [];
   framesWithActiveStrokes.forEach((data, nodeId) => {
     try {
-      const { node, originalStrokes, originalStrokeWeight, originalStrokeAlign, originalStrokeStyleId, timeoutId, fadeTimeoutId } = data;
-      
-      // Clear any pending timeouts for this specific node
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        activeStrokeTimeouts.delete(timeoutId);
-      }
-      if (fadeTimeoutId) {
-        clearTimeout(fadeTimeoutId);
-        activeStrokeTimeouts.delete(fadeTimeoutId);
-      }
-      
-      if (nodeExists(node)) {
-        // Restore original stroke style first (for variables)
-        if (originalStrokeStyleId && 'strokeStyleId' in node) {
-          node.strokeStyleId = originalStrokeStyleId;
-        } else if ('strokeStyleId' in node) {
-          node.strokeStyleId = '';
-        }
-        
-        // Restore original strokes
-        node.strokes = originalStrokes;
-        
-        // Restore other properties
-        if (originalStrokeWeight > 0) {
-          node.strokeWeight = originalStrokeWeight;
-        }
-        
-        node.strokeAlign = originalStrokeAlign;
+      // Only remove if node is definitely inaccessible
+      const testId = data.node.id;
+      if (data.node.removed) {
+        deadNodeIds.push(nodeId);
       }
     } catch (error) {
-      console.error('Error cleaning up stroke for node:', nodeId, error);
+      // Node is definitely dead if we can't access basic properties
+      deadNodeIds.push(nodeId);
     }
   });
+  deadNodeIds.forEach(nodeId => framesWithActiveStrokes.delete(nodeId));
+
+  // Continue with existing restoration logic for live nodes - NOW ASYNC
+  const restorationPromises: Promise<void>[] = [];
+  
+  framesWithActiveStrokes.forEach((data, nodeId) => {
+    const restorationPromise = (async () => {
+      try {
+        const { node, originalStrokes, originalStrokeWeight, originalStrokeAlign, originalStrokeStyleId, timeoutId, fadeTimeoutId } = data;
+        
+        // Clear any pending timeouts for this specific node
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          activeStrokeTimeouts.delete(timeoutId);
+        }
+        if (fadeTimeoutId) {
+          clearTimeout(fadeTimeoutId);
+          activeStrokeTimeouts.delete(fadeTimeoutId);
+        }
+        
+        if (nodeExists(node)) {
+          // Restore original stroke style first (for variables) - ASYNC VERSION
+          if (originalStrokeStyleId && 'strokeStyleId' in node) {
+            await node.setStrokeStyleIdAsync(originalStrokeStyleId);
+          } else if ('strokeStyleId' in node) {
+            await node.setStrokeStyleIdAsync('');
+          }
+          
+          // Restore original strokes
+          node.strokes = originalStrokes;
+          
+          // Restore other properties
+          if (originalStrokeWeight > 0) {
+            node.strokeWeight = originalStrokeWeight;
+          } else {
+            node.strokeWeight = 0;
+          }
+          
+          node.strokeAlign = originalStrokeAlign;
+        }
+      } catch (error) {
+        console.error('Error cleaning up stroke for node:', nodeId, error);
+      }
+    })();
+    
+    restorationPromises.push(restorationPromise);
+  });
+  
+  // Wait for all restorations to complete
+  await Promise.all(restorationPromises);
   
   // Clear the tracking map
   framesWithActiveStrokes.clear();
 }
 
-// Plugin close handler
+// Plugin close handler - SYNCHRONOUS cleanup to prevent interrupted async operations
 figma.on('close', () => {
-  cleanupActiveStrokes();
+  // Clear all pending timeouts first
+  activeStrokeTimeouts.forEach(timeoutId => {
+    clearTimeout(timeoutId);
+  });
+  activeStrokeTimeouts.clear();
+
+  // SYNCHRONOUS stroke restoration - no async operations that can be interrupted
+  framesWithActiveStrokes.forEach((data, nodeId) => {
+    try {
+      const { node, originalStrokes, originalStrokeWeight, originalStrokeAlign } = data;
+      
+      if (nodeExists(node)) {
+        // Restore strokes synchronously (no async style ID operations)
+        node.strokes = originalStrokes;
+        
+        if (originalStrokeWeight > 0) {
+          node.strokeWeight = originalStrokeWeight;
+        } else {
+          node.strokeWeight = 0;
+        }
+        
+        node.strokeAlign = originalStrokeAlign;
+        
+        // Skip strokeStyleId restoration in close handler since it's async
+        // The blue stroke will be gone, which is the main goal
+      }
+    } catch (error) {
+      // Silent fail during shutdown
+    }
+  });
+  
+  // Clear the tracking map
+  framesWithActiveStrokes.clear();
 });
 
 // Store the analyzed frame for optimization
@@ -1520,32 +1600,56 @@ figma.ui.onmessage = (msg: UIMessage): void => {
   }
 };
 
-// Locate frame with temporary highlight - improved stroke cleanup
-function locateFrame(nodeId: string): void {
+// Locate frame with temporary highlight - COMPLETE FIXED VERSION
+async function locateFrame(nodeId: string): Promise<void> {
   try {
     // IMMEDIATE: Clean up any existing strokes first to prevent race conditions
-    cleanupActiveStrokes();
+    await cleanupActiveStrokes();
     
-    const node = figma.getNodeById(nodeId);
+    console.log('Attempting to locate frame with ID:', nodeId);
+    
+    // Try to get the node - this might fail if node is on different page
+    let node: BaseNode | null = null;
+    
+    try {
+      node = await figma.getNodeByIdAsync(nodeId);
+      console.log('Node found:', node ? node.name : 'null');
+    } catch (nodeError) {
+      console.error('Failed to get node by ID:', nodeError);
+      figma.notify("Frame not found - it may be on a different page");
+      return;
+    }
     
     if (!node || !nodeExists(node)) {
-      figma.notify("Frame not found");
+      console.log('Node is null or does not exist');
+      figma.notify("Frame not found or was deleted");
       return;
     }
     
     // Check if node is a SceneNode first
     if (!('type' in node) || !node.type) {
+      console.log('Invalid node type');
       figma.notify("Invalid node type");
       return;
     }
     
     const sceneNode = node as SceneNode;
+    console.log('Scene node type:', sceneNode.type);
     
     // Only zoom to the frame (don't select it)
-    figma.viewport.scrollAndZoomIntoView([sceneNode]);
+    try {
+      figma.viewport.scrollAndZoomIntoView([sceneNode]);
+      console.log('Successfully scrolled to node');
+    } catch (scrollError) {
+      console.error('Failed to scroll to node:', scrollError);
+      figma.notify("Found frame but couldn't scroll to it");
+      return;
+    }
     
     // Add temporary blue stroke if it's a frame
     if (isFrameNode(sceneNode)) {
+      console.log('Applying blue stroke to frame');
+      
       // Store original values with safe symbol handling and variable support
       const originalStrokes = sceneNode.strokes;
       const originalStrokeWeight = isNumberValue(sceneNode.strokeWeight) ? sceneNode.strokeWeight : 0;
@@ -1556,145 +1660,186 @@ function locateFrame(nodeId: string): void {
         ? sceneNode.strokeStyleId 
         : '';
       
-      // Apply blue highlight stroke
-      sceneNode.strokes = [{
-        type: 'SOLID',
-        color: { r: 0.2, g: 0.4, b: 1 }, // Blue color
-        visible: true
-      }];
-      sceneNode.strokeWeight = 3;
-      sceneNode.strokeAlign = 'INSIDE';
-      
-      // Clear any stroke style to ensure our blue color shows
-      if ('strokeStyleId' in sceneNode) {
-        sceneNode.strokeStyleId = '';
-      }
-      
-      // Set up cleanup with proper timeout tracking
-      const mainTimeoutId = setTimeout(() => {
-        try {
-          if (nodeExists(sceneNode) && framesWithActiveStrokes.has(nodeId)) {
-            // Gradually fade stroke by reducing opacity first
-            if (sceneNode.strokes && isArrayValue(sceneNode.strokes) && sceneNode.strokes.length > 0) {
-              const currentStroke = sceneNode.strokes[0];
-              if (currentStroke.type === 'SOLID') {
-                sceneNode.strokes = [{
-                  type: 'SOLID',
-                  color: { 
-                    r: currentStroke.color.r, 
-                    g: currentStroke.color.g, 
-                    b: currentStroke.color.b 
-                  },
-                  opacity: 0.3,
-                  visible: true
-                }];
-              }
+      try {
+        // Apply blue highlight stroke
+        sceneNode.strokes = [{
+          type: 'SOLID',
+          color: { r: 0.2, g: 0.4, b: 1 }, // Blue color
+          visible: true
+        }];
+        sceneNode.strokeWeight = 3;
+        sceneNode.strokeAlign = 'INSIDE';
+        
+        // Clear any stroke style to ensure our blue color shows - ASYNC VERSION
+        if ('strokeStyleId' in sceneNode) {
+          await sceneNode.setStrokeStyleIdAsync('');
+        }
+        
+        console.log('Blue stroke applied successfully');
+        
+        // IMPROVED: More robust restoration with guaranteed cleanup
+        const restoreStroke = async () => {
+          console.log('Attempting to restore stroke for node:', nodeId);
+          try {
+            // Double-check node still exists before restoration
+            if (!nodeExists(sceneNode)) {
+              console.log('Node no longer exists, skipping restoration');
+              framesWithActiveStrokes.delete(nodeId);
+              return;
             }
             
-            // Complete removal after short fade
-            const fadeTimeoutId = setTimeout(() => {
-              if (nodeExists(sceneNode) && framesWithActiveStrokes.has(nodeId)) {
-                try {
-                  const data = framesWithActiveStrokes.get(nodeId);
-                  if (data) {
-                    // Restore original stroke style first (for variables)
-                    if (data.originalStrokeStyleId && 'strokeStyleId' in sceneNode) {
-                      sceneNode.strokeStyleId = data.originalStrokeStyleId;
-                    } else if ('strokeStyleId' in sceneNode) {
-                      sceneNode.strokeStyleId = '';
-                    }
-                    
-                    // Then restore strokes (this maintains variable bindings)
-                    sceneNode.strokes = data.originalStrokes;
-                    
-                    // Restore other properties
-                    if (data.originalStrokeWeight > 0) {
-                      sceneNode.strokeWeight = data.originalStrokeWeight;
-                    }
-                    
-                    sceneNode.strokeAlign = data.originalStrokeAlign;
-                    
-                    // Clean up timeout tracking
-                    if (data.timeoutId) activeStrokeTimeouts.delete(data.timeoutId);
-                    if (data.fadeTimeoutId) activeStrokeTimeouts.delete(data.fadeTimeoutId);
-                    
-                    // Remove from tracking since it's complete
-                    framesWithActiveStrokes.delete(nodeId);
-                  }
-                } catch (restoreError) {
-                  console.error('Error in detailed restoration:', restoreError);
-                  // Emergency cleanup
-                  framesWithActiveStrokes.delete(nodeId);
+            console.log('Restoring original stroke properties');
+            
+            // Restore original stroke style first (for variables) - ASYNC VERSION
+            if (originalStrokeStyleId && 'strokeStyleId' in sceneNode) {
+              await sceneNode.setStrokeStyleIdAsync(originalStrokeStyleId);
+            } else if ('strokeStyleId' in sceneNode) {
+              await sceneNode.setStrokeStyleIdAsync('');
+            }
+            
+            // Restore original strokes
+            sceneNode.strokes = originalStrokes;
+            
+            // Restore other properties
+            if (originalStrokeWeight > 0) {
+              sceneNode.strokeWeight = originalStrokeWeight;
+            } else {
+              sceneNode.strokeWeight = 0; // Ensure it's set to 0 if no original stroke
+            }
+            
+            sceneNode.strokeAlign = originalStrokeAlign;
+            
+            console.log('Stroke restoration completed successfully');
+            
+            // Remove from tracking
+            framesWithActiveStrokes.delete(nodeId);
+            
+          } catch (restoreError) {
+            console.error('Error restoring stroke, forcing cleanup:', restoreError);
+            
+            // FORCE CLEANUP: If restoration fails, at least remove the blue stroke
+            try {
+              if (nodeExists(sceneNode)) {
+                sceneNode.strokes = []; // Remove all strokes as fallback
+                sceneNode.strokeWeight = 0;
+                // Try to clear stroke style as fallback - ASYNC VERSION
+                if ('strokeStyleId' in sceneNode) {
+                  await sceneNode.setStrokeStyleIdAsync('');
                 }
               }
-            }, 200);
-            
-            // Update timeout tracking
-            activeStrokeTimeouts.add(fadeTimeoutId);
-            if (framesWithActiveStrokes.has(nodeId)) {
-              const data = framesWithActiveStrokes.get(nodeId)!;
-              data.fadeTimeoutId = fadeTimeoutId;
-              framesWithActiveStrokes.set(nodeId, data);
+            } catch (forceError) {
+              console.error('Even force cleanup failed:', forceError);
             }
+            
+            // Always remove from tracking map
+            framesWithActiveStrokes.delete(nodeId);
           }
-        } catch (error) {
-          console.error('Error during fade:', error);
-          // Emergency cleanup
-          framesWithActiveStrokes.delete(nodeId);
-        }
-      }, 1000);
-      
-      // Track timeout and frame data
-      activeStrokeTimeouts.add(mainTimeoutId);
-      framesWithActiveStrokes.set(nodeId, {
-        node: sceneNode,
-        originalStrokes,
-        originalStrokeWeight,
-        originalStrokeAlign,
-        originalStrokeStyleId,
-        timeoutId: mainTimeoutId
-      });
+        };
+        
+        // Set up single timeout for restoration
+        const timeoutId = setTimeout(restoreStroke, 1500);
+        activeStrokeTimeouts.add(timeoutId);
+        
+        // Track for cleanup
+        framesWithActiveStrokes.set(nodeId, {
+          node: sceneNode,
+          originalStrokes,
+          originalStrokeWeight,
+          originalStrokeAlign,
+          originalStrokeStyleId,
+          timeoutId
+        });
+        
+        console.log('Stroke cleanup scheduled for 1.5 seconds');
+        
+      } catch (strokeError) {
+        console.error('Failed to apply blue stroke:', strokeError);
+        figma.notify("Found frame but couldn't highlight it");
+      }
+    } else {
+      console.log('Node is not a frame, no stroke applied');
+      figma.notify("Located node (not a frame)");
     }
     
   } catch (error) {
     console.error('Error in locateFrame:', error);
-    figma.notify("Error locating frame");
+    figma.notify("Could not locate frame");
   }
 }
 
-function optimizeSelection(): void {
+async function optimizeSelection(): Promise<void> {
+  // Reset error collection for new optimization
+  cleaningResults.criticalErrors = [];
+  cleaningResults.warnings = [];
+  
   // Use stored analyzed frame for optimization
   if (analyzedFrame && nodeExists(analyzedFrame)) {
-    cleanFrames([analyzedFrame]);
+    const framesToRemove = analyzedFrameData?.removableFrames || 0;
+    
+    try {
+      await cleanFrames([analyzedFrame]);
+      
+      // Calculate actual frames removed
+      const totalFramesRemoved = cleaningResults.framesMerged + cleaningResults.siblingsRemoved;
+      
+      // Show success notification
+      if (totalFramesRemoved === 0) {
+        figma.notify("Your layers are fully optimized!");
+      } else {
+        figma.notify(`${totalFramesRemoved} frame${totalFramesRemoved !== 1 ? 's' : ''} removed`);
+      }
+      
+      // Send results to UI with error information
+      const optimizationResults: OptimizationResults = {
+        totalFrames: analyzedFrameData!.totalFrames - totalFramesRemoved,
+        mergeableFrames: analyzedFrameData!.mergeableFrames,
+        optimizableSiblingGroups: analyzedFrameData!.optimizableSiblingGroups,
+        paddingOptimizations: analyzedFrameData!.paddingOptimizations,
+        removableFrames: 0,
+        removableFrameInfos: analyzedFrameData!.removableFrameInfos,
+        frameName: analyzedFrameData!.frameName,
+        frameId: analyzedFrameData!.frameId,
+        issues: analyzedFrameData!.issues,
+        criticalErrors: cleaningResults.criticalErrors,
+        warnings: cleaningResults.warnings,
+        framesRemoved: totalFramesRemoved
+      };
+      
+      figma.ui.postMessage({
+        type: 'optimization-complete',
+        results: optimizationResults
+      });
+      
+    } catch (error) {
+      const errorMsg = `Optimization failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      figma.notify(errorMsg);
+      cleaningResults.criticalErrors.push(errorMsg);
+      
+      // Send error results to UI
+      const errorResults: OptimizationResults = {
+        totalFrames: analyzedFrameData!.totalFrames,
+        mergeableFrames: analyzedFrameData!.mergeableFrames,
+        optimizableSiblingGroups: analyzedFrameData!.optimizableSiblingGroups,
+        paddingOptimizations: analyzedFrameData!.paddingOptimizations,
+        removableFrames: analyzedFrameData!.removableFrames,
+        removableFrameInfos: analyzedFrameData!.removableFrameInfos,
+        frameName: analyzedFrameData!.frameName,
+        frameId: analyzedFrameData!.frameId,
+        issues: analyzedFrameData!.issues,
+        criticalErrors: cleaningResults.criticalErrors,
+        warnings: cleaningResults.warnings,
+        framesRemoved: 0
+      };
+      
+      figma.ui.postMessage({
+        type: 'optimization-complete',
+        results: errorResults
+      });
+    }
     
     // Clear the stored frame after optimization
     analyzedFrame = null;
     analyzedFrameData = null;
-    
-    // After optimization, trigger a new analysis if there's still a selection
-    setTimeout(() => {
-      const selection = figma.currentPage.selection;
-      if (selection.length > 0) {
-        const results: AnalysisResults = analyzeFrames(selection);
-        
-        if (selection.length === 1) {
-          results.frameName = safeGetNodeName(selection[0]);
-          results.frameId = selection[0].id;
-        } else {
-          results.frameName = 'Multiple Frames selected';
-          results.frameId = 'multiple';
-        }
-        
-        analyzedFrame = selection[0];
-        analyzedFrameData = results;
-        
-        figma.ui.postMessage({
-          type: 'analysis-result',
-          hasSelection: true,
-          results: results
-        });
-      }
-    }, 100);
     
     return;
   }
@@ -1707,7 +1852,21 @@ function optimizeSelection(): void {
     return;
   }
   
-  cleanFrames(selection);
+  try {
+    await cleanFrames(selection);
+    
+    const totalFramesRemoved = cleaningResults.framesMerged + cleaningResults.siblingsRemoved;
+    
+    if (totalFramesRemoved === 0) {
+      figma.notify("Your layers are fully optimized!");
+    } else {
+      figma.notify(`${totalFramesRemoved} frame${totalFramesRemoved !== 1 ? 's' : ''} removed`);
+    }
+    
+  } catch (error) {
+    const errorMsg = `Optimization failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    figma.notify(errorMsg);
+  }
 }
 
 function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
@@ -1987,17 +2146,19 @@ function checkForIssues(node: FrameNode | GroupNode): Array<{node: string; issue
   return issues;
 }
 
-function cleanFrames(nodes: readonly SceneNode[]): void {
+async function cleanFrames(nodes: readonly SceneNode[]): Promise<void> {
   cleaningResults = {
     framesAnalyzed: 0,
     framesMerged: 0,
     siblingGroupsOptimized: 0,
     siblingsRemoved: 0,
     paddingOptimized: 0,
-    issues: []
+    issues: [],
+    criticalErrors: [],
+    warnings: []
   };
   
-  function cleanNode(node: SceneNode): void {
+  async function cleanNode(node: SceneNode): Promise<void> {
     if (!nodeExists(node)) return;
     
     if (node.type === 'COMPONENT') return;
@@ -2010,46 +2171,51 @@ function cleanFrames(nodes: readonly SceneNode[]): void {
           const childrenCopy = [...node.children];
           const existingChildren = childrenCopy.filter(child => nodeExists(child));
           
-          existingChildren.forEach(child => {
+          // Process children recursively first (depth-first)
+          for (const child of existingChildren) {
             if (nodeExists(child)) {
-              cleanNode(child);
+              await cleanNode(child);
             }
-          });
+          }
         } catch (error) {
-          // Silent fail
+          const errorMsg = `Failed to analyze children of "${safeGetNodeName(node)}"`;
+          cleaningResults.warnings.push(errorMsg);
         }
       }
       
+      // Optimize siblings if this is a frame with auto layout
       if (nodeExists(node) && isFrameNode(node) && hasAutoLayout(node)) {
         try {
           optimizeSiblingsSelectively(node);
         } catch (error) {
-          // Silent fail
+          const errorMsg = `Failed to optimize siblings in "${safeGetNodeName(node)}"`;
+          cleaningResults.criticalErrors.push(errorMsg);
         }
       }
       
+      // Merge frame if possible (do this after processing children and siblings)
       if (nodeExists(node) && canBeMerged(node)) {
         try {
-          mergeFrame(node);
+          await mergeFrame(node);
         } catch (error) {
-          // Silent fail
+          const errorMsg = `Failed to merge frame "${safeGetNodeName(node)}"`;
+          cleaningResults.criticalErrors.push(errorMsg);
         }
       }
     }
   }
   
-  nodes.forEach(node => cleanNode(node));
-  
-  const totalFramesRemoved = cleaningResults.framesMerged + cleaningResults.siblingsRemoved;
-  
-  if (totalFramesRemoved === 0) {
-    figma.notify("Your layers are fully optimized!");
-  } else {
-    figma.notify(`${totalFramesRemoved} frame${totalFramesRemoved !== 1 ? 's' : ''} removed`);
+  for (const node of nodes) {
+    try {
+      await cleanNode(node);
+    } catch (error) {
+      const errorMsg = `Failed to process "${safeGetNodeName(node)}"`;
+      cleaningResults.criticalErrors.push(errorMsg);
+    }
   }
 }
 
-function mergeFrame(parentFrame: FrameNode | GroupNode): void {
+async function mergeFrame(parentFrame: FrameNode | GroupNode): Promise<void> {
   if (!nodeExists(parentFrame)) return;
 
   const layoutChildren: SceneNode[] = getLayoutChildren(parentFrame);
@@ -2100,7 +2266,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       }
     }
   } catch (error) {
-    return;
+    throw new Error(`Failed to read child frame properties: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
   
   const alignmentInheritance = determineAlignmentInheritance(parentFrame, childFrame, childSpacingInfo);
@@ -2111,7 +2277,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       grandchildren.push(...childFrame.children.filter(child => nodeExists(child)));
     }
   } catch (error) {
-    // Silent fail
+    throw new Error(`Failed to access grandchildren: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
   
   let childStrokes: readonly Paint[] = [];
@@ -2143,7 +2309,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       }
     }
   } catch (error) {
-    // Silent fail
+    // Non-critical, continue
   }
   
   let childAbsoluteElements: SceneNode[] = [];
@@ -2182,7 +2348,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       parentAbsoluteElements = getAbsoluteChildren(parentFrame);
     }
   } catch (error) {
-    // Silent fail
+    // Non-critical, continue
   }
   
   try {
@@ -2221,7 +2387,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       parentFrame.paddingBottom = combinedPadding.bottom;
     }
   } catch (error) {
-    return;
+    throw new Error(`Failed to apply layout properties: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
   
   if (isFrameNode(childFrame) && nodeExists(childFrame)) {
@@ -2236,7 +2402,8 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
         parentFrame.appendChild(grandchild);
       }
     } catch (error) {
-      // Silent fail
+      const errorMsg = `Failed to move grandchild "${safeGetNodeName(grandchild)}"`;
+      cleaningResults.warnings.push(errorMsg);
     }
   });
   
@@ -2263,7 +2430,8 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
         parentFrame.appendChild(element);
       }
     } catch (error) {
-      // Silent fail
+      const errorMsg = `Failed to restore absolute positioned element "${safeGetNodeName(element)}"`;
+      cleaningResults.warnings.push(errorMsg);
     }
   });
   
@@ -2272,7 +2440,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       childFrame.remove();
     }
   } catch (error) {
-    // Silent fail
+    throw new Error(`Failed to remove child frame: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
   
   try {
@@ -2284,7 +2452,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       });
     }
   } catch (error) {
-    // Silent fail
+    // Non-critical
   }
   
   try {
@@ -2295,14 +2463,14 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       }
     }
   } catch (error) {
-    // Silent fail
+    // Non-critical
   }
   
   if (sameDimensions && nodeExists(parentFrame)) {
     try {
       if (isStringValue(childEffectStyleId) && childEffectStyleId !== '') {
         if (isFrameNode(parentFrame) && 'effectStyleId' in parentFrame) {
-          parentFrame.effectStyleId = childEffectStyleId;
+          await parentFrame.setEffectStyleIdAsync(childEffectStyleId);
         }
       } else if (childEffects.length > 0) {
         if ('effects' in parentFrame) {
@@ -2312,7 +2480,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       
       if (isStringValue(childStrokeStyleId) && childStrokeStyleId !== '') {
         if (isFrameNode(parentFrame) && 'strokeStyleId' in parentFrame) {
-          parentFrame.strokeStyleId = childStrokeStyleId;
+          await parentFrame.setStrokeStyleIdAsync(childStrokeStyleId);
         }
       } else if (childStrokes.length > 0) {
         if ('strokes' in parentFrame) {
@@ -2331,7 +2499,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
         
         if (isStringValue(childFillStyleId) && childFillStyleId !== '') {
           if (isFrameNode(parentFrame) && 'fillStyleId' in parentFrame) {
-            parentFrame.fillStyleId = childFillStyleId;
+            await parentFrame.setFillStyleIdAsync(childFillStyleId);
           }
         } else if (childFills.length > 0) {
           if ('fills' in parentFrame) {
@@ -2342,14 +2510,14 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       else if (isStringValue(childFillStyleId) && childFillStyleId !== '' &&
                ('fills' in parentFrame) && parentFrame.fills && isArrayValue(parentFrame.fills) && parentFrame.fills.length > 0) {
         if (isFrameNode(parentFrame) && 'fillStyleId' in parentFrame) {
-          parentFrame.fillStyleId = childFillStyleId;
+          await parentFrame.setFillStyleIdAsync(childFillStyleId);
           if ('fills' in parentFrame) {
             parentFrame.fills = [];
           }
         }
       }
     } catch (error) {
-      // Silent fail
+      // Non-critical styling errors, continue
     }
   } else if (nodeExists(parentFrame)) {
     if ((!('fills' in parentFrame) || !parentFrame.fills || !isArrayValue(parentFrame.fills) || parentFrame.fills.length === 0) && 
@@ -2357,7 +2525,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
       try {
         if (isStringValue(childFillStyleId) && childFillStyleId !== '') {
           if (isFrameNode(parentFrame) && 'fillStyleId' in parentFrame) {
-            parentFrame.fillStyleId = childFillStyleId;
+            await parentFrame.setFillStyleIdAsync(childFillStyleId);
           }
         } else if (childFills.length > 0) {
           if ('fills' in parentFrame) {
@@ -2365,7 +2533,7 @@ function mergeFrame(parentFrame: FrameNode | GroupNode): void {
           }
         }
       } catch (error) {
-        // Silent fail
+        // Non-critical styling errors, continue
       }
     }
   }
