@@ -1,7 +1,7 @@
 /// <reference types="@figma/plugin-typings" />
 
-// Frame Cleaner Plugin - Production Version with Critical Fixes
-// Features: Error collection, memory leak fixes, improved UX
+// Frame Cleaner Plugin - Production Version with DEBUG LOGGING
+// Features: Error collection, memory leak fixes, improved UX, comprehensive logging
 
 // Type definitions
 interface CleaningResults {
@@ -14,8 +14,8 @@ interface CleaningResults {
     node: string;
     issue: string;
   }>;
-  criticalErrors: string[];  // NEW: User-facing errors
-  warnings: string[];       // NEW: Non-blocking issues
+  criticalErrors: string[];
+  warnings: string[];
 }
 
 interface InheritanceDetails {
@@ -1089,6 +1089,8 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
   
   if (siblingFrames.length === 0) return;
 
+  console.log(`[OPTIMIZATION] Dissolving ALL ${siblingFrames.length} siblings in "${safeGetNodeName(parentFrame)}"`);
+
   const referenceSibling = siblingFrames[0];
   if (nodeExists(referenceSibling) && hasAutoLayout(referenceSibling)) {
     applySiblingAlignmentInheritance(parentFrame, referenceSibling);
@@ -1142,12 +1144,14 @@ function dissolveAllSiblings(parentFrame: FrameNode): void {
       }
       
       if (nodeExists(sibling)) {
+        console.log(`  ✓ Removed sibling: "${safeGetNodeName(sibling)}"`);
         sibling.remove();
         cleaningResults.siblingsRemoved++;
       }
       
     } catch (error) {
       const errorMsg = `Failed to dissolve sibling "${safeGetNodeName(sibling)}"`;
+      console.log(`  ✗ ${errorMsg}`);
       cleaningResults.criticalErrors.push(errorMsg);
     }
   }
@@ -1200,6 +1204,8 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
     return;
   }
   
+  console.log(`  [OPTIMIZATION] Dissolving single sibling: "${safeGetNodeName(sibling)}"`);
+  
   applySiblingAlignmentInheritance(parent, sibling);
   
   const parentChildren = getLayoutChildren(parent);
@@ -1248,9 +1254,11 @@ function dissolveSingleSibling(sibling: FrameNode, parent: FrameNode, shouldTran
   
   try {
     sibling.remove();
+    console.log(`    ✓ Removed: "${safeGetNodeName(sibling)}"`);
     cleaningResults.siblingsRemoved++;
   } catch (error) {
     const errorMsg = `Failed to remove sibling "${safeGetNodeName(sibling)}"`;
+    console.log(`    ✗ ${errorMsg}`);
     cleaningResults.criticalErrors.push(errorMsg);
     return;
   }
@@ -1263,6 +1271,8 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
   const siblingFrames = layoutChildren.filter(child => isFrameNode(child)) as FrameNode[];
   
   if (siblingFrames.length === 0) return;
+  
+  console.log(`[OPTIMIZATION] Checking ${siblingFrames.length} siblings in "${safeGetNodeName(parentFrame)}"`);
   
   siblingFrames.forEach(sibling => {
     if ('layoutPositioning' in sibling && sibling.layoutPositioning === 'ABSOLUTE') {
@@ -1282,6 +1292,7 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
       dissolveAllSiblings(parentFrame);
     } catch (error) {
       const errorMsg = `Failed to dissolve siblings in "${safeGetNodeName(parentFrame)}"`;
+      console.log(`✗ ${errorMsg}`);
       cleaningResults.criticalErrors.push(errorMsg);
     }
     return;
@@ -1302,8 +1313,11 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
         paddingTransferred = true;
       } catch (error) {
         const errorMsg = `Failed to dissolve sibling "${safeGetNodeName(sibling)}"`;
+        console.log(`  ✗ ${errorMsg}`);
         cleaningResults.warnings.push(errorMsg);
       }
+    } else {
+      console.log(`  ⊘ Skipped (not eligible): "${safeGetNodeName(sibling)}"`);
     }
   }
   
@@ -1315,7 +1329,7 @@ function optimizeSiblingsSelectively(parentFrame: FrameNode): void {
 // Initialize plugin
 figma.showUI(__html__, { width: 350, height: 600 });
 
-console.log('Frame Cleaner Plugin - Fixed Version initialized');
+console.log('=== Frame Cleaner Plugin - DEBUG VERSION ===');
 
 // Deep optimize setting - enabled by default for v1
 let deepOptimizeEnabled: boolean = true;
@@ -1498,9 +1512,16 @@ figma.on('selectionchange', (): void => {
                                 currentSelection[0].id === selection[0].id;
       
       if (selectionUnchanged) {
+        console.log('\n=== STARTING ANALYSIS ===');
         const results: AnalysisResults = analyzeFrames(selection);
         results.frameName = frameName;
         results.frameId = frameId;
+        
+        console.log(`\nANALYSIS SUMMARY:`);
+        console.log(`  Total frames analyzed: ${results.totalFrames}`);
+        console.log(`  Removable frames found: ${results.removableFrames}`);
+        console.log(`  - Mergeable single-child: ${results.mergeableFrames}`);
+        console.log(`  - Dissolvable sibling groups: ${results.optimizableSiblingGroups}`);
         
         // Store for optimization
         analyzedFrame = selection[0];
@@ -1554,9 +1575,14 @@ setTimeout((): void => {
     
     // Then perform analysis
     setTimeout(() => {
+      console.log('\n=== STARTING INITIAL ANALYSIS ===');
       const results: AnalysisResults = analyzeFrames(selection);
       results.frameName = frameName;
       results.frameId = frameId;
+      
+      console.log(`\nANALYSIS SUMMARY:`);
+      console.log(`  Total frames analyzed: ${results.totalFrames}`);
+      console.log(`  Removable frames found: ${results.removableFrames}`);
       
       analyzedFrame = selection[0];
       analyzedFrameData = results;
@@ -1768,6 +1794,8 @@ async function locateFrame(nodeId: string): Promise<void> {
 }
 
 async function optimizeSelection(): Promise<void> {
+  console.log('\n=== STARTING OPTIMIZATION ===');
+  
   // Reset error collection for new optimization
   cleaningResults.criticalErrors = [];
   cleaningResults.warnings = [];
@@ -1775,12 +1803,30 @@ async function optimizeSelection(): Promise<void> {
   // Use stored analyzed frame for optimization
   if (analyzedFrame && nodeExists(analyzedFrame)) {
     const framesToRemove = analyzedFrameData?.removableFrames || 0;
+    console.log(`Expected to remove: ${framesToRemove} frames`);
     
     try {
       await cleanFrames([analyzedFrame]);
       
       // Calculate actual frames removed
       const totalFramesRemoved = cleaningResults.framesMerged + cleaningResults.siblingsRemoved;
+      
+      console.log(`\nOPTIMIZATION RESULTS:`);
+      console.log(`  Frames merged: ${cleaningResults.framesMerged}`);
+      console.log(`  Siblings removed: ${cleaningResults.siblingsRemoved}`);
+      console.log(`  Total removed: ${totalFramesRemoved}`);
+      console.log(`  Expected: ${framesToRemove}`);
+      console.log(`  Discrepancy: ${framesToRemove - totalFramesRemoved}`);
+      
+      if (cleaningResults.criticalErrors.length > 0) {
+        console.log(`\nCRITICAL ERRORS (${cleaningResults.criticalErrors.length}):`);
+        cleaningResults.criticalErrors.forEach(err => console.log(`  ✗ ${err}`));
+      }
+      
+      if (cleaningResults.warnings.length > 0) {
+        console.log(`\nWARNINGS (${cleaningResults.warnings.length}):`);
+        cleaningResults.warnings.forEach(warn => console.log(`  ⚠ ${warn}`));
+      }
       
       // Show success notification
       if (totalFramesRemoved === 0) {
@@ -1812,6 +1858,7 @@ async function optimizeSelection(): Promise<void> {
       
     } catch (error) {
       const errorMsg = `Optimization failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.log(`✗ ${errorMsg}`);
       figma.notify(errorMsg);
       cleaningResults.criticalErrors.push(errorMsg);
       
@@ -1857,6 +1904,8 @@ async function optimizeSelection(): Promise<void> {
     
     const totalFramesRemoved = cleaningResults.framesMerged + cleaningResults.siblingsRemoved;
     
+    console.log(`\nOPTIMIZATION COMPLETE: ${totalFramesRemoved} frames removed`);
+    
     if (totalFramesRemoved === 0) {
       figma.notify("Your layers are fully optimized!");
     } else {
@@ -1865,6 +1914,7 @@ async function optimizeSelection(): Promise<void> {
     
   } catch (error) {
     const errorMsg = `Optimization failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    console.log(`✗ ${errorMsg}`);
     figma.notify(errorMsg);
   }
 }
@@ -1882,6 +1932,9 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
     issues: []
   };
   
+  // Track unique node IDs that we've already counted as removable
+  const countedRemovableIds = new Set<string>();
+  
   function analyzeNode(node: SceneNode): void {
     if (!nodeExists(node)) return;
     
@@ -1890,38 +1943,53 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
     if (isFrameOrGroup(node)) {
       results.totalFrames++;
       
+      let skipSiblingCheck = false;
+      
       if (canBeMerged(node) && nodeExists(node)) {
-        results.mergeableFrames++;
-        results.removableFrames++;
-        
-        // Get the child frame that will actually be removed
         const layoutChildren = getLayoutChildren(node);
         const childFrame = layoutChildren[0];
         
-        // Type guard: ensure child is a frame or group
-        if (childFrame && isFrameOrGroup(childFrame)) {
-          const parentName = safeGetNodeName(node); // The selected parent frame
+        // Only count if we haven't counted this child before
+        if (childFrame && isFrameOrGroup(childFrame) && !countedRemovableIds.has(childFrame.id)) {
+          console.log(`[ANALYSIS] Found mergeable frame: "${safeGetNodeName(node)}"`);
+          results.mergeableFrames++;
+          results.removableFrames++;
+          countedRemovableIds.add(childFrame.id);
+          
+          const parentName = safeGetNodeName(node);
           const inheritance = calculateInheritanceDetails(childFrame, node);
           
+          console.log(`  → Will remove child: "${safeGetNodeName(childFrame)}"`);
+          
           results.removableFrameInfos.push({
-            name: safeGetNodeName(childFrame), // Show child frame name
-            nodeId: childFrame.id,             // Use child frame nodeId
-            parentName: parentName,            // Parent is the selected frame
+            name: safeGetNodeName(childFrame),
+            nodeId: childFrame.id,
+            parentName: parentName,
             inheritance: inheritance
           });
         }
+        
+        skipSiblingCheck = true;
       }
       
-      if (isFrameNode(node) && hasAutoLayout(node) && nodeExists(node)) {
+      if (!skipSiblingCheck && isFrameNode(node) && hasAutoLayout(node) && nodeExists(node)) {
         const layoutChildren = getLayoutChildren(node);
         const siblingFrames = layoutChildren.filter(child => isFrameNode(child) && nodeExists(child)) as FrameNode[];
         
         if (siblingFrames.length > 0) {
           if (canAllSiblingsBeDissolvedTogether(node)) {
-            results.optimizableSiblingGroups++;
+            let groupLogged = false;
             siblingFrames.forEach(sibling => {
-              if (nodeExists(sibling)) {
+              if (nodeExists(sibling) && !countedRemovableIds.has(sibling.id)) {
+                if (!groupLogged) {
+                  console.log(`[ANALYSIS] Found ${siblingFrames.length} siblings (ALL dissolvable) in "${safeGetNodeName(node)}"`);
+                  results.optimizableSiblingGroups++;
+                  groupLogged = true;
+                }
                 results.removableFrames++;
+                countedRemovableIds.add(sibling.id);
+                
+                console.log(`  → Will remove sibling: "${safeGetNodeName(sibling)}"`);
                 
                 const inheritance = calculateInheritanceDetails(sibling, node);
                 
@@ -1936,12 +2004,16 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
           } else {
             let hasPartialOptimization = false;
             siblingFrames.forEach(sibling => {
-              if (nodeExists(sibling) && canSiblingBeDissolvedSelectively(sibling, node, true)) {
+              if (nodeExists(sibling) && canSiblingBeDissolvedSelectively(sibling, node, true) && !countedRemovableIds.has(sibling.id)) {
                 if (!hasPartialOptimization) {
+                  console.log(`[ANALYSIS] Found siblings (PARTIAL dissolution) in "${safeGetNodeName(node)}"`);
                   results.optimizableSiblingGroups++;
                   hasPartialOptimization = true;
                 }
                 results.removableFrames++;
+                countedRemovableIds.add(sibling.id);
+                
+                console.log(`  → Will remove sibling: "${safeGetNodeName(sibling)}"`);
                 
                 const inheritance = calculateInheritanceDetails(sibling, node);
                 
@@ -1964,6 +2036,7 @@ function analyzeFrames(nodes: readonly SceneNode[]): AnalysisResults {
       const issues = checkForIssues(node);
       results.issues.push(...issues);
       
+      // Always recurse to count all frames
       if (hasChildren(node) && nodeExists(node)) {
         try {
           const childrenCopy = [...node.children];
@@ -2189,6 +2262,7 @@ async function cleanFrames(nodes: readonly SceneNode[]): Promise<void> {
           optimizeSiblingsSelectively(node);
         } catch (error) {
           const errorMsg = `Failed to optimize siblings in "${safeGetNodeName(node)}"`;
+          console.log(`✗ ${errorMsg}`);
           cleaningResults.criticalErrors.push(errorMsg);
         }
       }
@@ -2196,9 +2270,12 @@ async function cleanFrames(nodes: readonly SceneNode[]): Promise<void> {
       // Merge frame if possible (do this after processing children and siblings)
       if (nodeExists(node) && canBeMerged(node)) {
         try {
+          console.log(`[OPTIMIZATION] Merging frame: "${safeGetNodeName(node)}"`);
           await mergeFrame(node);
+          console.log(`  ✓ Successfully merged`);
         } catch (error) {
           const errorMsg = `Failed to merge frame "${safeGetNodeName(node)}"`;
+          console.log(`  ✗ ${errorMsg}`);
           cleaningResults.criticalErrors.push(errorMsg);
         }
       }
@@ -2210,6 +2287,7 @@ async function cleanFrames(nodes: readonly SceneNode[]): Promise<void> {
       await cleanNode(node);
     } catch (error) {
       const errorMsg = `Failed to process "${safeGetNodeName(node)}"`;
+      console.log(`✗ ${errorMsg}`);
       cleaningResults.criticalErrors.push(errorMsg);
     }
   }

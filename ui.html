@@ -203,6 +203,10 @@
       font-size: 16px;
       font-weight: 500;
       color: #1e1e1e;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 100%;
     }
     
     .stats-container {
@@ -761,7 +765,9 @@
     // Handle immediate frame name update
     function handleFrameNameUpdate(frameName) {
       // Update frame name immediately
-      document.getElementById('frame-name').textContent = frameName;
+      const frameNameEl = document.getElementById('frame-name');
+      frameNameEl.textContent = frameName;
+      frameNameEl.title = frameName;
       
       // Show loading screen
       showLoadingScreen();
@@ -957,7 +963,9 @@
       removeLoadingState();
       
       // Update frame name (should already be set, but ensure consistency)
-      document.getElementById('frame-name').textContent = results.frameName;
+      const frameNameEl = document.getElementById('frame-name');
+      frameNameEl.textContent = results.frameName;
+      frameNameEl.title = results.frameName;
       
       // Update stats
       document.getElementById('total-frames').textContent = results.totalFrames;
@@ -988,12 +996,20 @@
       showScreen('results');
       
       // Update frame name
-      document.getElementById('results-frame-name').textContent = results.frameName;
+      const resultsFrameNameEl = document.getElementById('results-frame-name');
+      resultsFrameNameEl.textContent = results.frameName;
+      resultsFrameNameEl.title = results.frameName;
       
       // Update stats
       if (optimizationResults) {
         document.getElementById('results-total-frames').textContent = optimizationResults.totalFrames;
         document.getElementById('results-removed-frames').textContent = optimizationResults.framesRemoved;
+        
+        // Update label based on whether frames were actually removed
+        const removedLabel = document.querySelector('#results-screen .stat-row:nth-child(2) .stat-label');
+        if (removedLabel) {
+          removedLabel.textContent = optimizationResults.framesRemoved > 0 ? 'Removed Frames' : 'Removable Frames';
+        }
         
         // Show issues if any exist
         const hasIssues = (optimizationResults.criticalErrors && optimizationResults.criticalErrors.length > 0) ||
@@ -1007,6 +1023,13 @@
       } else {
         document.getElementById('results-total-frames').textContent = results.totalFrames;
         document.getElementById('results-removed-frames').textContent = 0;
+        
+        // Show "Removable Frames" when no optimization happened (0 removable case)
+        const removedLabel = document.querySelector('#results-screen .stat-row:nth-child(2) .stat-label');
+        if (removedLabel) {
+          removedLabel.textContent = 'Removable Frames';
+        }
+        
         hideIssues();
       }
     }
