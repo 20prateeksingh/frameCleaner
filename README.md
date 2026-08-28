@@ -1,40 +1,65 @@
-Below are the steps to get your plugin running. You can also find instructions at:
+# Frame Cleaner
 
-  https://www.figma.com/plugin-docs/plugin-quickstart-guide/
+A Figma plugin that takes a frame and rebuilds it with the fewest auto-layout layers it can get away with.
 
-This plugin template uses Typescript and NPM, two standard tools in creating JavaScript applications.
+Files get built fast. Wrappers pile up, somebody nests a frame to fix one alignment problem, and three weeks later six layers are doing the work of two. It still looks right, it's just miserable to edit. Run this before you hand the file to someone else.
 
-First, download Node.js which comes with NPM. This will allow you to install TypeScript and other
-libraries. You can find the download link here:
+On [Figma Community](https://www.figma.com/community/plugin/1546639159666408069/frame-cleaner).
 
-  https://nodejs.org/en/download/
+## How it works
 
-Next, install TypeScript using the command:
+Select a frame. The plugin walks the tree and tells you how many frames are in there and how many it thinks it can remove, with the list of which ones and what the parent would inherit from each. You see the proposal before anything changes. Then you press the button.
 
-  npm install -g typescript
+What it collapses:
 
-Finally, in the directory of your plugin, get the latest type definitions for the plugin API by running:
+- **Redundant wrappers.** A frame whose layout properties the parent can absorb: padding, alignment, sizing mode, item spacing, layout direction. The wrapper goes, the parent inherits.
+- **Sibling groups.** Frames sitting next to each other that were only grouped to share a property.
+- **Nested padding.** Padding spread across layers that adds up to one value the parent can hold on its own.
 
-  npm install --save-dev @figma/plugin-typings
+Style IDs survive the merge. If a fill is bound to a design token, the token moves up instead of getting flattened into a hex value.
 
-If you are familiar with JavaScript, TypeScript will look very familiar. In fact, valid JavaScript code
-is already valid Typescript code.
+## What it won't touch
 
-TypeScript adds type annotations to variables. This allows code editors such as Visual Studio Code
-to provide information about the Figma API while you are writing code, as well as help catch bugs
-you previously didn't notice.
+This is the part that took the longest. The plugin refuses to merge rather than risk breaking your file, and it tells you which check stopped it. It backs off when it finds:
 
-For more information, visit https://www.typescriptlang.org/
+- transforms or rotation
+- gradients or image fills
+- complex strokes
+- prototype interactions
+- advanced layout modes
+- fills that aren't compatible between parent and child
+- a child with a stroke, an effect, or a corner radius where the dimensions differ
+- a child with opacity below 1
 
-Using TypeScript requires a compiler to convert TypeScript (code.ts) into JavaScript (code.js)
-for the browser to run.
+If you get `Cannot merge` with a reason after it, that's this list talking.
 
-We recommend writing TypeScript code using Visual Studio code:
+## Deep Optimise
 
-1. Download Visual Studio Code if you haven't already: https://code.visualstudio.com/.
-2. Open this directory in Visual Studio Code.
-3. Compile TypeScript to JavaScript: Run the "Terminal > Run Build Task..." menu item,
-    then select "npm: watch". You will have to do this again every time
-    you reopen Visual Studio Code.
+On by default. It's more aggressive about sibling merges and padding collapse, and it's where most of the frames-removed count comes from.
 
-That's it! Visual Studio Code will regenerate the JavaScript file every time you save.
+Turn it off if you see a visual shift after a run. That's the same instruction the plugin gives you in the panel, and it's there because deep mode can still get a padding sum wrong on siblings with inconsistent values. A switch you control beats me pretending that doesn't happen.
+
+## Privacy
+
+No network calls. `manifest.json` sets `networkAccess.allowedDomains` to `["none"]`, so it couldn't phone home even if I wanted it to. Nothing about your file leaves Figma.
+
+## Build it yourself
+
+```bash
+npm install
+npm run watch
+```
+
+Then in Figma: **Plugins → Development → Import plugin from manifest**, and pick `manifest.json`. Needs the desktop app.
+
+`npm run build` compiles once instead of watching. `code.js` is generated and gitignored, so a fresh clone has to build before Figma will run it.
+
+## Guide and bugs
+
+There's a [full user guide](https://www.notion.so/Frame-Cleaner-Plugin-Complete-User-Guide-268738f28993818185e0eeb360ae79b7) with screenshots.
+
+Found something broken? [Report it here](https://docs.google.com/forms/d/e/1FAIpQLScMlpEqSqvdDTgUI-NxKuZDFl-yx8wNg73UIUD-V1IT0knyEQ/viewform). I read them.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
